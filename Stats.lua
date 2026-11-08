@@ -106,6 +106,9 @@ local function clearGraph(g)
 	for _, b in ipairs(g.icons) do b:Hide() end
 	for _, t in ipairs(g.segs or {}) do t:Hide() end
 	for _, e in ipairs(g.legend or {}) do e:Hide() end
+	for _, l in ipairs(g.dl or {}) do l:Hide() end
+	for _, t in ipairs(g.cl or {}) do t:Hide() end
+	if g.sep then g.sep:Hide() end
 	g.msg:Hide()
 end
 
@@ -341,6 +344,89 @@ function ST.DrawStack(g, f, x0, y0, w, h, lx, ly)
 	return top
 end
 
+-- Above: a line chart of your DPS (white, scale on the left) and your total so
+-- far (gold, scale on the right). Below: your spells stacked per second.
+local DPS_COLOR, TOTAL_COLOR = { 0.95, 0.95, 0.95 }, { 1, 0.82, 0.25 }
+function ST.DrawCombo(g, f, x0, y0, w, h, lx, ly)
+	g.dl, g.cl = g.dl or {}, g.cl or {}
+	for _, l in ipairs(g.dl) do l:Hide() end
+	for _, t in ipairs(g.cl) do t:Hide() end
+	if g.sep then g.sep:Hide() end
+	if not (f.timeline and #f.timeline >= 2) then return end
+	local hs = math.floor(h * 0.45)
+	local stackTop = ST.DrawStack(g, f, x0, y0, w, hs, lx, ly)
+	local y1 = y0 + hs + 10
+	local hl = h - hs - 10 - 12
+	if hl < 10 then return stackTop end
+
+	local dps = smooth(f.timeline, 2)
+	local total, run = {}, 0
+	for i, v in ipairs(f.timeline) do run = run + v total[i] = run end
+	local maxD, maxT = 1, math.max(1, run)
+	for _, v in ipairs(dps) do maxD = math.max(maxD, v) end
+	maxD = maxD * 1.1
+	local n = #dps
+	local step = math.max(1, math.ceil(n / math.max(2, w / 3)))
+	local k = 0
+	local function seg(xa, ya, xb, yb, c)
+		k = k + 1
+		local l = g.dl[k]
+		if not l then
+			l = g:CreateLine(nil, "OVERLAY")
+			g.dl[k] = l
+		end
+		l:SetThickness(2)
+		l:SetColorTexture(c[1], c[2], c[3], 1)
+		l:SetStartPoint("BOTTOMLEFT", g, x0 + xa, y1 + ya)
+		l:SetEndPoint("BOTTOMLEFT", g, x0 + xb, y1 + yb)
+		l:Show()
+	end
+	local px, pd, pt
+	for i = 1, n, step do
+		local x = (i - 1) / math.max(1, n - 1) * w
+		local d, t = dps[i] / maxD * hl, total[i] / maxT * hl
+		if px then
+			seg(px, pt, x, t, TOTAL_COLOR)
+			seg(px, pd, x, d, DPS_COLOR)
+		end
+		px, pd, pt = x, d, t
+	end
+	-- the last point
+	if px and px < w then
+		seg(px, pt, w, hl, TOTAL_COLOR)
+		seg(px, pd, w, dps[n] / maxD * hl, DPS_COLOR)
+	end
+
+	local function text(i, s, c, point, x, y)
+		local t = g.cl[i]
+		if not t then
+			t = S:Font(g, 9)
+			g.cl[i] = t
+		end
+		t:SetTextColor(c[1], c[2], c[3])
+		t:ClearAllPoints()
+		t:SetPoint(point, g, "BOTTOMLEFT", x, y)
+		t:SetText(s)
+		t:Show()
+	end
+	text(1, ("%s  ·  max %s"):format(L["DPS"], Short(maxD / 1.1)), DPS_COLOR, "BOTTOMLEFT", x0, y1 + hl + 1)
+	text(2, ("%s  %s"):format(L["Total"], Short(run)), TOTAL_COLOR, "BOTTOMRIGHT", x0 + w, y1 + hl + 1)
+	if stackTop then
+		text(3, ("%s  ·  max %s %s"):format(L["Per spell"], Short(stackTop / 1.1), L["DPS"]), S.colors.muted,
+			"BOTTOMLEFT", x0, y0 + hs + 1)
+	end
+	if not g.sep then
+		g.sep = g:CreateTexture(nil, "BORDER")
+		g.sep:SetColorTexture(1, 1, 1, 0.08)
+		g.sep:SetHeight(1)
+	end
+	g.sep:ClearAllPoints()
+	g.sep:SetPoint("BOTTOMLEFT", g, "BOTTOMLEFT", x0, y1 - 4)
+	g.sep:SetWidth(w)
+	g.sep:Show()
+	return stackTop
+end
+
 -- the DPS of one fight over time: measured when the client showed the
 -- numbers in combat, else estimated from your casts (History.Timeline)
 local function drawCurve(g, f, fights)
@@ -349,9 +435,8 @@ local function drawCurve(g, f, fights)
 		clearGraph(g)
 		g.title:SetText("")
 		local w, h = area(g)
-		local top = ST.DrawStack(g, f, INSET_L, INSET_B, w, h - 4, 6, 4)
+		local top = ST.DrawCombo(g, f, INSET_L, INSET_B, w, h - 4, 6, 4)
 		if top then
-			grid(g, top)
 			local n = #g.grid + 1
 			label(g, n, "0:00", INSET_L, INSET_B - 2, "TOPLEFT")
 			label(g, n + 1, Clock(f.duration), INSET_L + w, INSET_B - 2, "TOPRIGHT")

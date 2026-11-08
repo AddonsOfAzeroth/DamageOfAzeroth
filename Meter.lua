@@ -333,13 +333,14 @@ function M:DrawGraph(height)
 		g.dps:SetText(Short(DoA.History.DPS(last)))
 		g.value:SetText(Short(last.myDamage or 0))
 		g.note:SetText("")
-		local scale = DoA.Stats.DrawStack(g, last, 0, chartY, w, chartH, 2, TOP_LINE + 1)
-		g.yTop:SetText(scale and (Short(scale) .. " " .. L["DPS"]) or "")
+		DoA.Stats.DrawCombo(g, last, 0, chartY, w, chartH, 2, TOP_LINE + 1)
+		g.yTop:SetText("")
 		g.axL:SetText("0:00")
 		g.axR:SetText(DoA.Clock(last.duration))
 		return 1
 	end
-	if DoA.Stats.DrawStack then DoA.Stats.DrawStack(g, {}, 0, 0, 0, 0, 0, 0) end -- clears it
+	if DoA.Stats.DrawCombo then DoA.Stats.DrawCombo(g, {}, 0, 0, 0, 0, 0, 0) end -- clears the lines
+	if DoA.Stats.DrawStack then DoA.Stats.DrawStack(g, {}, 0, 0, 0, 0, 0, 0) end -- and the bars
 
 	-- in combat: your total so far, one column per second (the scale is that total)
 	local src = InCombatLockdown() and mySource()

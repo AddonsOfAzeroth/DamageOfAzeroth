@@ -66,6 +66,7 @@ for k, v in pairs({
 	["Compare"] = "Vergelijking",
 	["Graph"] = "Grafiek",
 	["Other"] = "Overig",
+	["Per spell"] = "Per spell",
 	["List"] = "Lijst",
 	["Click: live graph or the list."] = "Klik: live grafiek of de lijst.",
 	["Your damage, live"] = "Jouw schade, live",
