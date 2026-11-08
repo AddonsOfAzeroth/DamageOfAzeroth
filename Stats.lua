@@ -110,6 +110,7 @@ local function clearGraph(g)
 	for _, t in ipairs(g.cl or {}) do t:Hide() end
 	for _, t in ipairs(g.gl or {}) do t:Hide() end
 	if g.sep then g.sep:Hide() end
+	if g.hover then g.hover:Hide() end
 	g.msg:Hide()
 end
 
@@ -244,6 +245,7 @@ local function castIcons(g, f, w)
 			if not b then
 				b = CreateFrame("Button", nil, g)
 				b:SetSize(10, 10)
+				b:SetFrameLevel(g:GetFrameLevel() + 5)
 				b.tex = b:CreateTexture(nil, "OVERLAY")
 				b.tex:SetAllPoints()
 				b.tex:SetTexCoord(0.08, 0.92, 0.08, 0.92)
@@ -345,15 +347,73 @@ function ST.DrawStack(g, f, x0, y0, w, h, lx, ly)
 	return top
 end
 
+local DPS_COLOR, TOTAL_COLOR = { 0.95, 0.95, 0.95 }, { 1, 0.82, 0.25 }
+
+-- Mouse over the chart: a guide line at that second and a tooltip with the
+-- time, DPS, total so far and what each spell did in that second.
+local function hover(g, f, x0, y0, w, h, dps, total)
+	local hv = g.hover
+	if not hv then
+		hv = CreateFrame("Frame", nil, g)
+		hv:SetFrameLevel(g:GetFrameLevel() + 2)
+		hv.guide = hv:CreateTexture(nil, "OVERLAY")
+		hv.guide:SetColorTexture(1, 1, 1, 0.35)
+		hv.guide:SetWidth(1)
+		hv.guide:Hide()
+		hv:SetScript("OnLeave", function(self)
+			self:SetScript("OnUpdate", nil)
+			self.guide:Hide()
+			self.at = nil
+			GameTooltip:Hide()
+		end)
+		hv:SetScript("OnEnter", function(self)
+			self:SetScript("OnUpdate", function(me)
+				local d = me.data
+				local left = me:GetLeft()
+				if not (d and left) then return end
+				local n = #d.dps
+				local x = GetCursorPosition() / me:GetEffectiveScale() - left
+				local i = math.max(1, math.min(n, math.floor(x / d.w * (n - 1) + 1.5)))
+				if i == me.at then return end
+				me.at = i
+				me.guide:ClearAllPoints()
+				me.guide:SetPoint("BOTTOM", me, "BOTTOMLEFT", (i - 1) / math.max(1, n - 1) * d.w, 0)
+				me.guide:SetHeight(me:GetHeight())
+				me.guide:Show()
+				GameTooltip:SetOwner(me, "ANCHOR_CURSOR")
+				GameTooltip:AddLine(Clock(i - 1), 1, 1, 1)
+				GameTooltip:AddDoubleLine(L[d.f.perSecond or "DPS"], Short(d.dps[i]), DPS_COLOR[1], DPS_COLOR[2], DPS_COLOR[3], 1, 1, 1)
+				GameTooltip:AddDoubleLine(L["Total"], Short(d.total[i]), TOTAL_COLOR[1], TOTAL_COLOR[2], TOTAL_COLOR[3], 1, 1, 1)
+				for si, e in ipairs(d.f.stack or {}) do
+					local v = e.s[i] or 0
+					if v > 0 then
+						local c = PALETTE[si] or PALETTE[#PALETTE]
+						GameTooltip:AddDoubleLine(e.other and L["Other"] or spellName(e.id), Short(v), c[1], c[2], c[3], 0.9, 0.9, 0.9)
+					end
+				end
+				GameTooltip:Show()
+			end)
+		end)
+		g.hover = hv
+	end
+	hv:ClearAllPoints()
+	hv:SetPoint("BOTTOMLEFT", g, "BOTTOMLEFT", x0, y0)
+	hv:SetSize(w, h)
+	hv:EnableMouse(true)
+	hv.data = { f = f, w = w, dps = dps, total = total }
+	hv.at = nil
+	hv:Show()
+end
+
 -- Above: a line chart of your DPS (white, scale on the left) and your total so
 -- far (gold, scale on the right). Below: your spells stacked per second.
-local DPS_COLOR, TOTAL_COLOR = { 0.95, 0.95, 0.95 }, { 1, 0.82, 0.25 }
 function ST.DrawCombo(g, f, x0, y0, w, h, lx, ly)
 	g.dl, g.cl = g.dl or {}, g.cl or {}
 	for _, l in ipairs(g.dl) do l:Hide() end
 	for _, t in ipairs(g.cl) do t:Hide() end
 	for _, t in ipairs(g.gl or {}) do t:Hide() end
 	if g.sep then g.sep:Hide() end
+	if g.hover then g.hover:Hide() end
 	if not (f.timeline and #f.timeline >= 2) then return end
 	local hs = math.floor(h * 0.45)
 	local stackTop = ST.DrawStack(g, f, x0, y0, w, hs, lx, ly)
@@ -365,7 +425,8 @@ function ST.DrawCombo(g, f, x0, y0, w, h, lx, ly)
 	local total, run = {}, 0
 	for i, v in ipairs(f.timeline) do run = run + v total[i] = run end
 	-- end on Blizzard's own total (the spells can add up a little differently)
-	local real = f.myDamage or f.total
+	local real = f.total or f.myDamage
+	local ps = L[f.perSecond or "DPS"]
 	if real and real > 0 and run > 0 then
 		local k = real / run
 		for i = 1, #total do total[i] = total[i] * k end
@@ -418,10 +479,10 @@ function ST.DrawCombo(g, f, x0, y0, w, h, lx, ly)
 		t:SetText(s)
 		t:Show()
 	end
-	text(1, ("%s  ·  max %s"):format(L["DPS"], Short(maxD / 1.1)), DPS_COLOR, "BOTTOMLEFT", x0, y1 + hl + 1)
+	text(1, ("%s  ·  max %s"):format(ps, Short(maxD / 1.1)), DPS_COLOR, "BOTTOMLEFT", x0, y1 + hl + 1)
 	text(2, ("%s  %s"):format(L["Total"], Short(run)), TOTAL_COLOR, "BOTTOMRIGHT", x0 + w, y1 + hl + 1)
 	if stackTop then
-		text(3, ("%s  ·  max %s %s"):format(L["Per spell"], Short(stackTop / 1.1), L["DPS"]), S.colors.muted,
+		text(3, ("%s  ·  max %s %s"):format(L["Per spell"], Short(stackTop / 1.1), ps), S.colors.muted,
 			"BOTTOMLEFT", x0, y0 + hs + 1)
 	end
 	-- y axes: a faint line halfway each chart, with its value (DPS left, total right)
@@ -457,18 +518,26 @@ function ST.DrawCombo(g, f, x0, y0, w, h, lx, ly)
 	g.sep:SetPoint("BOTTOMLEFT", g, "BOTTOMLEFT", x0, y1 - 4)
 	g.sep:SetWidth(w)
 	g.sep:Show()
+	hover(g, f, x0, y0, w, y1 + hl - y0, dps, total)
 	return stackTop
 end
 
 -- the DPS of one fight over time: measured when the client showed the
 -- numbers in combat, else estimated from your casts (History.Timeline)
 local function drawCurve(g, f, fights)
+	-- healing: its own lines and spells (no estimate curve for older fights)
+	local v = H.View(f, cfg().kind)
+	if v ~= f and not (v.stack and (v.total or 0) > 0) then
+		clearGraph(g)
+		g.msg:SetText(v.stack and L["No healing in this fight."] or L["No healing timeline for this fight."])
+		return g.msg:Show()
+	end
 	-- stacked per spell when we have it (fights from now on)
-	if f.stack then
+	if v.stack then
 		clearGraph(g)
 		g.title:SetText("")
 		local w, h = area(g)
-		local top = ST.DrawCombo(g, f, INSET_L, INSET_B, w, h - 4, 6, 4)
+		local top = ST.DrawCombo(g, v, INSET_L, INSET_B, w, h - 4, 6, 4)
 		if top then
 			local n = #g.grid + 1
 			label(g, n, "0:00", INSET_L, INSET_B - 2, "TOPLEFT")
@@ -697,6 +766,13 @@ function ST:Build()
 	}
 	self.detailTabs.spells:SetPoint("TOPLEFT", self.graph, "BOTTOMLEFT", -4, -6)
 	self.detailTabs.group:SetPoint("LEFT", self.detailTabs.spells, "RIGHT", 0, 0)
+	-- damage or healing: the graph and the list below follow it
+	self.kindTabs = {
+		damage = tab(f, L["Damage"], function() cfg().kind = "damage" ST:Refresh() end),
+		healing = tab(f, L["Healing"], function() cfg().kind = "healing" ST:Refresh() end),
+	}
+	self.kindTabs.healing:SetPoint("TOPRIGHT", self.graph, "BOTTOMRIGHT", 4, -6)
+	self.kindTabs.damage:SetPoint("RIGHT", self.kindTabs.healing, "LEFT", 0, 0)
 
 	self.details = {}
 	for i = 1, DETAIL_MAX do
@@ -757,18 +833,21 @@ end
 function ST:RefreshDetails(f)
 	local mode = cfg().detail
 	for k, b in pairs(self.detailTabs) do b:SetActive(k == mode) end
+	for k, b in pairs(self.kindTabs) do b:SetActive(k == cfg().kind) end
+	local healing = cfg().kind == "healing"
 	local rows = {}
 	if f and mode == "spells" then
-		local total = f.myDamage or 0
-		for _, sp in ipairs(f.spells or {}) do
+		local total = (healing and f.myHealing or f.myDamage) or 0
+		for _, sp in ipairs((healing and f.healSpells or f.spells) or {}) do
 			local name, icon = spellInfo(sp.id)
 			rows[#rows + 1] = { name = name, icon = icon, value = sp.total, share = total > 0 and sp.total / total or 0,
 				color = S.colors.accent }
 		end
 	elseif f then
 		local total = 0
-		for _, r in ipairs(f.damage or {}) do total = total + r.total end
-		for _, r in ipairs(f.damage or {}) do
+		local list = (healing and f.healing or f.damage) or {}
+		for _, r in ipairs(list) do total = total + r.total end
+		for _, r in ipairs(list) do
 			local cr, cg, cb = DoA.Meter.ClassColor(r.class)
 			rows[#rows + 1] = { name = r.me and (r.name .. " (" .. L["You"] .. ")") or r.name, value = r.total,
 				share = total > 0 and r.total / total or 0, color = { cr, cg, cb } }

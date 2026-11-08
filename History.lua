@@ -54,29 +54,39 @@ local function mySource(kind)
 end
 H.MySource = mySource
 
--- every second: your total and each spell's total so far (when readable)
-local function sample()
-	if not fight then return end
-	local src = mySource("damage") or mine(current("damage"))
+-- one second of one kind (damage or healing): the total and each spell's
+-- total so far; returns the total, or nil when the client hides it
+local function readInto(live, src)
 	local v = src and Safe(src.totalAmount, nil)
-	local live = fight.live
-	if type(v) == "number" then
-		fight.samples[#fight.samples + 1] = v
-		local n = live.n + 1
-		live.n = n
-		live.totals[n] = v
-		if Open(src.combatSpells) then
-			for _, sp in ipairs(src.combatSpells) do
-				local id, total = Open(sp) and Safe(sp.spellID, nil), Open(sp) and Safe(sp.totalAmount, nil)
-				if type(id) == "number" and type(total) == "number" then
-					live.spells[id] = live.spells[id] or {}
-					live.spells[id][n] = total
-				end
+	if not src then v = 0 end -- nothing of this kind yet
+	if type(v) ~= "number" then
+		live.secret = true
+		return
+	end
+	local n = live.n + 1
+	live.n = n
+	live.totals[n] = v
+	if src and Open(src.combatSpells) then
+		for _, sp in ipairs(src.combatSpells) do
+			local id, total = Open(sp) and Safe(sp.spellID, nil), Open(sp) and Safe(sp.totalAmount, nil)
+			if type(id) == "number" and type(total) == "number" then
+				live.spells[id] = live.spells[id] or {}
+				live.spells[id][n] = total
 			end
 		end
+	end
+	return v
+end
+
+-- every second: damage and healing so far (when readable)
+local function sample()
+	if not fight then return end
+	local v = readInto(fight.live, mySource("damage") or mine(current("damage")))
+	readInto(fight.liveHeal, mySource("healing"))
+	if v then
+		fight.samples[#fight.samples + 1] = v
 	else
 		fight.hidden = true
-		live.secret = true
 		fight.samples[#fight.samples + 1] = false -- keeps the timeline
 	end
 end
@@ -113,12 +123,21 @@ local function fromLive(live)
 end
 
 -- the running fight as a chart can draw it, or nil (hidden numbers / too early)
-function H.LiveFight()
-	local live = fight and fight.live
+-- kind: "damage" (default) or "healing"
+function H.LiveFight(kind)
+	local live = fight and (kind == "healing" and fight.liveHeal or fight.live)
 	if not live or live.secret or live.n < 2 then return end
 	local timeline, stack = fromLive(live)
 	local total = live.totals[live.n]
-	return { timeline = timeline, stack = stack, duration = live.n, total = total, dps = total / live.n }
+	return { timeline = timeline, stack = stack, duration = live.n, total = total, dps = total / live.n,
+		perSecond = kind == "healing" and "HPS" or "DPS" }
+end
+
+-- a saved fight seen as damage (itself) or as healing, in the shape the charts use
+function H.View(f, kind)
+	if kind ~= "healing" then return f end
+	return { timeline = f.healTimeline, stack = f.healStack, duration = f.duration, total = f.myHealing,
+		casts = f.casts, perSecond = "HPS" }
 end
 
 -- Your own casts are not hidden: they give the timeline its moments.
@@ -165,6 +184,7 @@ local function start()
 		samples = {},
 		casts = {},
 		live = { n = 0, totals = {}, spells = {} },
+		liveHeal = { n = 0, totals = {}, spells = {} },
 	}
 	if lastCast and now - lastCast.at < 2.5 then fight.casts[1] = { t = 0, id = lastCast.id } end
 	lastCast = nil
@@ -230,7 +250,12 @@ local function finish()
 	else
 		f.timeline, f.stack = H.Timeline(f)
 	end
-	f.live, f.t0 = nil, nil
+	if not f.liveHeal.secret and f.liveHeal.n >= 3 then
+		f.healTimeline, f.healStack = fromLive(f.liveHeal)
+	else
+		f.healTimeline, f.healStack = H.Timeline({ duration = f.duration, spells = f.healSpells, casts = f.casts })
+	end
+	f.live, f.liveHeal, f.t0 = nil, nil, nil
 	for _, r in ipairs(f.damage) do if r.me then f.myDamage = r.total end end
 	for _, r in ipairs(f.healing) do if r.me then f.myHealing = r.total end end
 	if not (f.myDamage or f.myHealing) then return end
@@ -242,7 +267,7 @@ local function finish()
 	list[#list + 1] = f
 	while #list > DoA.char.stats.keep do table.remove(list, 1) end
 	-- the per-spell timeline is big: keep it for the last 30 fights
-	for i = 1, #list - 30 do list[i].stack = nil end
+	for i = 1, #list - 30 do list[i].stack, list[i].healStack = nil, nil end
 	DoA:Fire("FIGHT", f)
 end
 

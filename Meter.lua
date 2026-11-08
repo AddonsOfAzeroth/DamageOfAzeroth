@@ -328,12 +328,13 @@ function M:DrawGraph(height)
 	local last = DoA.char.fights[#DoA.char.fights]
 
 	-- after the fight: your spells stacked (the numbers are readable again)
-	if not InCombatLockdown() and not healing and last and last.stack and DoA.Stats.DrawStack then
+	local view = last and DoA.History.View(last, healing and "healing" or "damage")
+	if not InCombatLockdown() and view and view.stack and DoA.Stats.DrawCombo then
 		for _, col in ipairs(g.cols) do col:Hide() end
-		g.dps:SetText(Short(DoA.History.DPS(last)))
-		g.value:SetText(Short(last.myDamage or 0))
+		g.dps:SetText(Short(healing and DoA.History.HPS(last) or DoA.History.DPS(last)))
+		g.value:SetText(Short((healing and last.myHealing or last.myDamage) or 0))
 		g.note:SetText("")
-		DoA.Stats.DrawCombo(g, last, 0, chartY, w, chartH, 2, TOP_LINE + 1)
+		DoA.Stats.DrawCombo(g, view, 0, chartY, w, chartH, 2, TOP_LINE + 1)
 		g.yTop:SetText("")
 		g.axL:SetText("0:00")
 		g.axR:SetText(DoA.Clock(last.duration))
@@ -343,7 +344,7 @@ function M:DrawGraph(height)
 	if DoA.Stats.DrawStack then DoA.Stats.DrawStack(g, {}, 0, 0, 0, 0, 0, 0) end -- and the bars
 
 	-- in combat, when the client shows your numbers: the same chart, live
-	local lf = InCombatLockdown() and not healing and DoA.History.LiveFight()
+	local lf = InCombatLockdown() and DoA.History.LiveFight(healing and "healing" or "damage")
 	if lf then
 		for _, col in ipairs(g.cols) do col:Hide() end
 		g.dps:SetText(Short(lf.dps))

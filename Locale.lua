@@ -66,6 +66,8 @@ for k, v in pairs({
 	["Compare"] = "Vergelijking",
 	["Graph"] = "Grafiek",
 	["Other"] = "Overig",
+	["No healing in this fight."] = "Geen healing in dit gevecht.",
+	["No healing timeline for this fight."] = "Geen healing-tijdlijn voor dit gevecht.",
 	["Per spell"] = "Per spell",
 	["List"] = "Lijst",
 	["Click: live graph or the list."] = "Klik: live grafiek of de lijst.",

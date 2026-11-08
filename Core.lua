@@ -27,6 +27,7 @@ local charDefaults = {
 		filter = "all",  -- all, solo, party, raid
 		view = "fight",  -- fight (curve), trend (last fights)
 		detail = "spells", -- spells, group
+		kind = "damage",   -- damage, healing (graph and spell list)
 		keep = 200,      -- fights kept
 	},
 	fights = {},        -- History.lua: one entry per fight, newest last
