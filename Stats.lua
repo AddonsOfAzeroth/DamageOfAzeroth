@@ -267,6 +267,8 @@ function ST:Build()
 	f:Hide()
 	tinsert(UISpecialFrames, "DamageOfAzerothStats") -- Esc closes it
 	self.frame = f
+	S:AddSizeGrip(f, { key = "stats", save = function() end })
+	S:ApplyScale(f)
 
 	local title = S:Font(f, 13)
 	title:SetPoint("TOPLEFT", PAD, -7)

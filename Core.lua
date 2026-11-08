@@ -111,9 +111,19 @@ function DoA.Open(t)
 	return type(t) == "table" and not issecret(t) and (not canaccesstable or canaccesstable(t))
 end
 
--- 12345 -> "12.3k"; hidden values are returned as they are (for widgets)
+-- 12345 -> "12.3k". Hidden values (combat) cannot be calculated with: they
+-- go through Blizzard's own abbreviation or string.format, which accept them,
+-- else as they are.
 function DoA.Short(v)
-	if issecret(v) then return v end
+	if issecret(v) then
+		if AbbreviateNumbers then
+			local ok, s = pcall(AbbreviateNumbers, v)
+			if ok and (issecret(s) or s) then return s end
+		end
+		local ok, s = pcall(string.format, "%.1f", v)
+		if ok then return s end
+		return v
+	end
 	if type(v) ~= "number" then return "" end
 	local L = DoA.L
 	local s
