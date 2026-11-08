@@ -62,6 +62,11 @@ for k, v in pairs({
 	["Delete fights"] = "Gevechten wissen",
 	["Delete all saved fights of this character?"] = "Alle bewaarde gevechten van dit karakter wissen?",
 	["Your share"] = "Jouw deel",
+	["This fight compared"] = "Dit gevecht vergeleken",
+	["Usual vs %s"] = "Meestal tegen %s",
+	["Usual solo"] = "Meestal solo",
+	["Usual party"] = "Meestal in groep",
+	["Usual raid"] = "Meestal in raid",
 	["Drag: make it bigger so more fits. Double-click: default size."] = "Slepen: groter maken zodat er meer in past. Dubbelklik: standaardgrootte.",
 	-- probe / slash
 	["/doa: statistics. /doa meter: meter on/off. /doa unlock: move the frames. /doa check: what this client allows."] = "/doa: statistieken. /doa meter: meter aan/uit. /doa unlock: frames verplaatsen. /doa check: wat deze client toelaat.",

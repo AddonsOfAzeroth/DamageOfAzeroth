@@ -159,15 +159,61 @@ local function line(g, i, x1, y1, x2, y2, c)
 	l:Show()
 end
 
--- the DPS curve of one fight
-local function drawCurve(g, f)
+-- this fight next to your usual: same enemy, same kind of group, your best
+local function drawCompare(g, f, fights)
+	clearGraph(g)
+	g.title:SetText(L["This fight compared"])
+	local function avg(test)
+		local sum, n = 0, 0
+		for _, o in ipairs(fights) do
+			if test(o) then sum, n = sum + H.DPS(o), n + 1 end
+		end
+		return n > 0 and sum / n or nil, n
+	end
+	local best = 0
+	for _, o in ipairs(fights) do best = math.max(best, H.DPS(o)) end
+	local bars = { { L["This fight"], H.DPS(f), S.colors.accent } }
+	local enemyAvg, en = avg(function(o) return f.enemy and o.enemy == f.enemy end)
+	if enemyAvg and en > 1 then bars[#bars + 1] = { L["Usual vs %s"]:format(f.enemy), enemyAvg, { 0.6, 0.65, 0.71 } } end
+	local groupAvg = avg(function(o) return o.group == f.group end)
+	if groupAvg then bars[#bars + 1] = { L["Usual " .. (f.group or "solo")], groupAvg, GROUP_COLORS[f.group] or S.colors.accent } end
+	bars[#bars + 1] = { L["Best"], best, { 1, 0.82, 0.25 } }
+	local max = 1
+	for _, b in ipairs(bars) do max = math.max(max, b[2]) end
+	max = max * 1.15
+	local nextLabel = grid(g, max)
+	local w, h = area(g)
+	local slot = w / #bars
+	for i, b in ipairs(bars) do
+		local bar = g.bars[i]
+		if not bar then
+			bar = CreateFrame("Button", nil, g)
+			bar.tex = bar:CreateTexture(nil, "ARTWORK")
+			bar.tex:SetAllPoints()
+			g.bars[i] = bar
+		end
+		bar.fight = nil
+		bar:SetScript("OnEnter", nil)
+		bar:SetScript("OnClick", nil)
+		bar:ClearAllPoints()
+		local bw = math.min(60, slot * 0.6)
+		bar:SetPoint("BOTTOMLEFT", g, "BOTTOMLEFT", INSET_L + (i - 0.5) * slot - bw / 2, INSET_B)
+		bar:SetSize(bw, math.max(1, b[2] / max * h))
+		bar.tex:SetColorTexture(b[3][1], b[3][2], b[3][3], i == 1 and 1 or 0.7)
+		bar:Show()
+		-- value above, name below
+		label(g, nextLabel, Short(b[2]), INSET_L + (i - 0.5) * slot, INSET_B + b[2] / max * h + 2, "BOTTOM")
+		label(g, nextLabel + 1, b[1], INSET_L + (i - 0.5) * slot, INSET_B - 2, "TOP")
+		nextLabel = nextLabel + 2
+	end
+end
+
+-- the DPS curve of one fight (only when the client showed the numbers in combat)
+local function drawCurve(g, f, fights)
+	local curve = H.Curve(f.samples, 5)
+	if not curve or #curve < 3 then return drawCompare(g, f, fights) end
 	clearGraph(g)
 	g.title:SetText(L["DPS over the fight"])
-	local curve = H.Curve(f.samples, 5)
-	if not curve or #curve < 3 then
-		g.msg:SetText(L["No curve for this fight: the numbers were hidden during combat."])
-		return g.msg:Show()
-	end
 	local max = 1
 	for _, v in ipairs(curve) do if v and v > max then max = v end end
 	max = max * 1.1
@@ -222,18 +268,19 @@ local function drawTrend(g, fights, selected)
 			b = CreateFrame("Button", nil, g)
 			b.tex = b:CreateTexture(nil, "ARTWORK")
 			b.tex:SetAllPoints()
-			b:SetScript("OnEnter", function(self)
-				local fi = self.fight
-				GameTooltip:SetOwner(self, "ANCHOR_TOP")
-				GameTooltip:AddLine(fi.enemy or fi.zone or L["unknown"], 1, 1, 1)
-				GameTooltip:AddLine(("%s DPS  ·  %s"):format(Short(H.DPS(fi)), Clock(fi.duration)), 0.8, 0.8, 0.8)
-				GameTooltip:AddLine(date("%d/%m %H:%M", fi.started), 0.6, 0.6, 0.6)
-				GameTooltip:Show()
-			end)
-			b:SetScript("OnLeave", function() GameTooltip:Hide() end)
-			b:SetScript("OnClick", function(self) ST.selected = self.fight ST:Refresh() end)
 			g.bars[i] = b
 		end
+		-- the comparison chart shares these bars: set the trend's scripts every time
+		b:SetScript("OnEnter", function(self)
+			local fi = self.fight
+			GameTooltip:SetOwner(self, "ANCHOR_TOP")
+			GameTooltip:AddLine(fi.enemy or fi.zone or L["unknown"], 1, 1, 1)
+			GameTooltip:AddLine(("%s DPS  ·  %s"):format(Short(H.DPS(fi)), Clock(fi.duration)), 0.8, 0.8, 0.8)
+			GameTooltip:AddLine(date("%d/%m %H:%M", fi.started), 0.6, 0.6, 0.6)
+			GameTooltip:Show()
+		end)
+		b:SetScript("OnLeave", function() GameTooltip:Hide() end)
+		b:SetScript("OnClick", function(self) ST.selected = self.fight ST:Refresh() end)
 		local dps = H.DPS(f)
 		sum = sum + dps
 		b.fight = f
@@ -529,7 +576,7 @@ function ST:Refresh()
 	end
 
 	if c.view == "trend" then drawTrend(self.graph, fights, sel)
-	elseif sel then drawCurve(self.graph, sel)
+	elseif sel then drawCurve(self.graph, sel, fights)
 	else drawTrend(self.graph, fights, sel) end
 	self:RefreshDetails(sel)
 end

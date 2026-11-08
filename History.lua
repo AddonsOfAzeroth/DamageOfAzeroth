@@ -125,8 +125,10 @@ local function finish()
 	if not (f.myDamage or f.myHealing) then return end
 	-- the curve: drop it when the numbers were hidden all fight
 	local any = false
-	for _, v in ipairs(f.samples) do if v then any = true break end end
-	if not any then f.samples = nil end
+	-- a curve needs most of the fight; this client usually hides it in combat
+	local readable = 0
+	for _, v in ipairs(f.samples) do if v then readable = readable + 1 end end
+	if readable < math.max(5, #f.samples * 0.6) then f.samples = nil end
 	local list = DoA.char.fights
 	list[#list + 1] = f
 	while #list > DoA.char.stats.keep do table.remove(list, 1) end
@@ -150,6 +152,9 @@ function H.HPS(f) return f.myHealing and f.duration and f.duration > 0 and f.myH
 -- DPS per second from the cumulative samples, smoothed over `window` seconds
 function H.Curve(samples, window)
 	if type(samples) ~= "table" then return end
+	local readable = 0 -- older saved fights can hold a hidden fight with one number
+	for _, v in ipairs(samples) do if v then readable = readable + 1 end end
+	if readable < math.max(5, #samples * 0.6) then return end
 	window = window or 5
 	local out = {}
 	for i = 1, #samples do
