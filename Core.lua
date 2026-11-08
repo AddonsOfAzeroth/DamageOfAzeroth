@@ -232,6 +232,7 @@ SlashCmdList.DAMAGEOFAZEROTH = function(msg)
 		DoA:Fire("SETTINGS", "meter")
 	elseif msg == "unlock" or msg == "lock" then
 		DoA:SetFramesLocked(msg == "lock")
+		DoA:Print(msg == "lock" and L["Frames locked."] or L["Frames unlocked: drag them where you like, drag a corner to make them bigger, type /doa lock when done."])
 	elseif msg == "check" then
 		DoA.History:Probe()
 	elseif msg == "debug" then

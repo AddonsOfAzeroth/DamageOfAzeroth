@@ -20,6 +20,15 @@ local MODES = {
 }
 local SESSIONS = { current = "Current", overall = "Overall" }
 
+-- ask before something that can't be undone (Blizzard's own yes/no popup)
+local function confirm(key, text, onYes)
+	StaticPopupDialogs[key] = StaticPopupDialogs[key] or { button1 = YES, button2 = NO, timeout = 0,
+		whileDead = true, hideOnEscape = true, preferredIndex = 3 }
+	StaticPopupDialogs[key].text = text
+	StaticPopupDialogs[key].OnAccept = onYes
+	StaticPopup_Show(key)
+end
+
 local function cfg() return DoA.char.meter end
 
 local function modeOf(key)
@@ -106,8 +115,10 @@ function M:Build()
 	self.stats.color = S.colors.accent
 	self.stats.text:SetTextColor(unpack(S.colors.accent))
 	self.reset = headerButton(f, "Clear all fights.", function()
-		if C_DamageMeter and C_DamageMeter.ResetAllCombatSessions then pcall(C_DamageMeter.ResetAllCombatSessions) end
-		M:Refresh()
+		confirm("DAMAGEOFAZEROTH_RESET", L["Clear all fights in the meter?"], function()
+			if C_DamageMeter and C_DamageMeter.ResetAllCombatSessions then pcall(C_DamageMeter.ResetAllCombatSessions) end
+			M:Refresh()
+		end)
 	end)
 	fit(self.reset, L["Reset"])
 	self.reset.color = S.colors.muted
@@ -119,7 +130,7 @@ function M:Build()
 	self.graphBtn.color = S.colors.accent
 	self.graphBtn.text:SetTextColor(unpack(S.colors.accent))
 	self.reset:SetPoint("RIGHT", self.when, "LEFT", 0, 0)
-	self.stats:SetPoint("RIGHT", self.reset, "LEFT", 0, 0)
+	self.stats:SetPoint("RIGHT", self.reset, "LEFT", -10, 0) -- a gap: Reset is not hit by mistake
 	self.graphBtn:SetPoint("RIGHT", self.stats, "LEFT", 0, 0)
 	self:ShowTools(false)
 

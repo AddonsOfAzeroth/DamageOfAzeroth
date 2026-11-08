@@ -34,6 +34,9 @@ for k, v in pairs({
 	["Click: next view (damage, DPS, healing, HPS). Right-click: previous."] = "Klik: volgende weergave (schade, DPS, healing, HPS). Rechtsklik: vorige.",
 	["Click: this fight or all fights."] = "Klik: dit gevecht of alle gevechten.",
 	["Clear all fights."] = "Alle gevechten wissen.",
+	["Clear all fights in the meter?"] = "Alle gevechten in de meter wissen?",
+	["Frames locked."] = "Kaders vergrendeld.",
+	["Frames unlocked: drag them where you like, drag a corner to make them bigger, type /doa lock when done."] = "Kaders ontgrendeld: sleep ze waar je wil, sleep een hoek om ze groter te maken, typ /doa lock als je klaar bent.",
 	["Statistics"] = "Statistieken",
 	["Open the statistics (/doa)."] = "Open de statistieken (/doa).",
 	-- stats
