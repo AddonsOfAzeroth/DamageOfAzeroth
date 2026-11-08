@@ -204,9 +204,11 @@ function M:Refresh()
 				pcall(r.SetMinMaxValues, r, 0, max)
 				pcall(r.SetValue, r, val(src.totalAmount, 0))
 				pcall(r.name.SetText, r.name, val(src.name, "?"))
-				local shown
-				if mode.perSecond then shown = src.amountPerSecond else shown = src.totalAmount end
-				pcall(r.value.SetText, r.value, Short(shown))
+				if mode.perSecond then
+					pcall(r.value.SetText, r.value, DoA.ShortRate(src.amountPerSecond))
+				else
+					pcall(r.value.SetText, r.value, Short(src.totalAmount))
+				end
 				r:Show()
 			end
 		end
@@ -331,7 +333,7 @@ function M:DrawGraph(height)
 	local view = last and DoA.History.View(last, healing and "healing" or "damage")
 	if not InCombatLockdown() and view and view.stack and DoA.Stats.DrawCombo then
 		for _, col in ipairs(g.cols) do col:Hide() end
-		g.dps:SetText(Short(healing and DoA.History.HPS(last) or DoA.History.DPS(last)))
+		g.dps:SetText(DoA.ShortRate(healing and DoA.History.HPS(last) or DoA.History.DPS(last)))
 		g.value:SetText(Short((healing and last.myHealing or last.myDamage) or 0))
 		g.note:SetText("")
 		DoA.Stats.DrawCombo(g, view, 0, chartY, w, chartH, 2, TOP_LINE + 1)
@@ -347,7 +349,7 @@ function M:DrawGraph(height)
 	local lf = InCombatLockdown() and DoA.History.LiveFight(healing and "healing" or "damage")
 	if lf then
 		for _, col in ipairs(g.cols) do col:Hide() end
-		g.dps:SetText(Short(lf.dps))
+		g.dps:SetText(DoA.ShortRate(lf.dps))
 		g.value:SetText(Short(lf.total))
 		g.note:SetText("")
 		DoA.Stats.DrawCombo(g, lf, 0, chartY, w, chartH, 2, TOP_LINE + 1)
@@ -359,7 +361,7 @@ function M:DrawGraph(height)
 
 	-- in combat, hidden numbers: your total so far, one column per second (the scale is that total)
 	local src = InCombatLockdown() and mySource()
-	if src then pcall(g.dps.SetText, g.dps, Short(src.amountPerSecond)) elseif n == 0 then g.dps:SetText("") end
+	if src then pcall(g.dps.SetText, g.dps, DoA.ShortRate(src.amountPerSecond)) elseif n == 0 then g.dps:SetText("") end
 	if n > 0 then
 		pcall(g.value.SetText, g.value, Short(top))
 		pcall(g.yTop.SetText, g.yTop, Short(top))

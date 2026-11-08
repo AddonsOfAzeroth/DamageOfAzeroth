@@ -136,6 +136,19 @@ function DoA.Short(v)
 	return (s:gsub("%.", L["decimal"]))
 end
 
+-- a per-second value (DPS, HPS): one decimal. Blizzard's abbreviation leaves
+-- small hidden numbers with all their decimals, so format those first.
+function DoA.ShortRate(v)
+	if issecret(v) then
+		local ok, s = pcall(string.format, "%.1f", v)
+		if ok then return s end
+		return DoA.Short(v)
+	end
+	if type(v) ~= "number" then return "" end
+	if v >= 1e4 then return DoA.Short(v) end
+	return (("%.1f"):format(v):gsub("%.", DoA.L["decimal"]))
+end
+
 function DoA.Clock(sec)
 	sec = DoA.Safe(sec, nil)
 	if type(sec) ~= "number" or sec < 0 then return "" end
