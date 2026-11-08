@@ -77,7 +77,7 @@ end
 function M:Build()
 	local f = CreateFrame("Frame", "DamageOfAzerothMeter", UIParent, "BackdropTemplate")
 	S:Backdrop(f)
-	f:SetWidth(WIDTH)
+	f:SetWidth(cfg().width or WIDTH)
 	f:SetFrameStrata("LOW")
 	f:EnableMouse(true)
 	f:SetScript("OnEnter", function() M:ShowTools(true) end)
@@ -127,9 +127,16 @@ function M:Build()
 	self.empty:SetTextColor(unpack(S.colors.muted))
 
 	self.rows = {}
+	-- wider = room for the header and names, taller = more rows
 	S:RegisterMover(f, "meter", L["Damage meter"], function(fr)
 		fr:SetPoint("BOTTOMRIGHT", UIParent, "BOTTOMRIGHT", -320, 220)
-	end)
+	end, nil, S:Sizing(f, "meter", { min = { 160, HEADER + PAD * 2 + ROW_H }, max = { 600, 700 }, apply = function(w, h)
+		local c = cfg()
+		c.width = w or WIDTH
+		c.rows = h and math.max(1, math.floor((h - HEADER - PAD * 2) / (ROW_H + 1))) or 8
+		f:SetWidth(c.width)
+		M:Refresh()
+	end }))
 end
 
 function M:ShowTools(on)
@@ -201,7 +208,10 @@ function M:Refresh()
 	local none = n == 0
 	self.empty:SetShown(none)
 	if none then self.empty:SetText(C_DamageMeter and L["No fight yet."] or L["Not available in this client."]) end
-	f:SetHeight(HEADER + PAD * 2 + (none and 20 or n * (ROW_H + 1)))
+	-- unlocked: show the room for all rows, so you can see what a resize does
+	local body = none and 20 or n * (ROW_H + 1)
+	if not DoA:FramesLocked() then body = c.rows * (ROW_H + 1) end
+	f:SetHeight(HEADER + PAD * 2 + body)
 	f:SetShown(not (none and c.hideEmpty and not InCombatLockdown()))
 end
 
@@ -227,6 +237,6 @@ function M:OnEnable()
 	C_Timer.NewTicker(1, function()
 		if InCombatLockdown() and M.frame:IsShown() then pcall(M.Refresh, M) end
 	end)
-	DoA:Listen("SETTINGS", function(group) if group == "meter" then pcall(M.Refresh, M) end end)
+	DoA:Listen("SETTINGS", function(group) if group == "meter" or group == "bars" then pcall(M.Refresh, M) end end)
 	pcall(M.Refresh, M)
 end

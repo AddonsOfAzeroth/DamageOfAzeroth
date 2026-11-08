@@ -18,7 +18,8 @@ local charDefaults = {
 		enabled = true,
 		mode = "damage",     -- damage, dps, healing, hps
 		session = "current", -- current, overall
-		rows = 8,
+		rows = 8,            -- rows that fit (taller meter = more)
+		width = 220,
 		hideEmpty = false,   -- hide the meter until the first fight
 	},
 	stats = {

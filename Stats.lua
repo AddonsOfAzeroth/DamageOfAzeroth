@@ -12,11 +12,11 @@ local Short, Clock = DoA.Short, DoA.Clock
 
 local ST = DoA:NewModule("Stats")
 
-local W, HGT, HEAD, PAD = 580, 400, 26, 8
+local W, HGT, HEAD, PAD = 580, 400, 26, 8 -- default size; the corner grip makes it bigger
 local LEFT_W = 210
-local LIST_ROW, LIST_MAX = 20, 11
+local LIST_ROW, LIST_MAX = 20, 40     -- rows made; how many show depends on the height
 local GRAPH_H = 150
-local DETAIL_ROW, DETAIL_MAX = 18, 6
+local DETAIL_ROW, DETAIL_MAX = 18, 20
 
 local GROUP_COLORS = {
 	solo = S.colors.accent,
@@ -256,19 +256,22 @@ function ST:Build()
 	local f = CreateFrame("Frame", "DamageOfAzerothStats", UIParent, "BackdropTemplate")
 	S:Backdrop(f, 0.95)
 	f:SetSize(W, HGT)
-	f:SetPoint("CENTER")
+	local pt = DoA.char.points.stats -- where you left it
+	if type(pt) == "table" and pt[1] then f:SetPoint(pt[1], UIParent, pt[3], pt[4], pt[5]) else f:SetPoint("CENTER") end
 	f:SetFrameStrata("HIGH")
 	f:SetMovable(true)
 	f:SetClampedToScreen(true)
 	f:EnableMouse(true)
 	f:RegisterForDrag("LeftButton")
 	f:SetScript("OnDragStart", f.StartMoving)
-	f:SetScript("OnDragStop", f.StopMovingOrSizing)
+	f:SetScript("OnDragStop", function()
+		f:StopMovingOrSizing()
+		local l, t = f:GetLeft(), f:GetTop()
+		if l and t then DoA.char.points.stats = { "TOPLEFT", "UIParent", "BOTTOMLEFT", math.floor(l + 0.5), math.floor(t + 0.5) } end
+	end)
 	f:Hide()
 	tinsert(UISpecialFrames, "DamageOfAzerothStats") -- Esc closes it
 	self.frame = f
-	S:AddSizeGrip(f, { key = "stats", save = function() end })
-	S:ApplyScale(f)
 
 	local title = S:Font(f, 13)
 	title:SetPoint("TOPLEFT", PAD, -7)
@@ -398,6 +401,29 @@ function ST:Build()
 	self.detailEmpty = S:Font(f, 11)
 	self.detailEmpty:SetPoint("TOPLEFT", self.graph, "BOTTOMLEFT", 0, -32)
 	self.detailEmpty:SetTextColor(unpack(S.colors.muted))
+
+	-- resize: more fights, a wider graph, more spells; text keeps its size
+	S:AddSizeGrip(f, S:Sizing(f, "stats", { min = { 480, 320 }, max = { 1400, 1000 }, apply = function(w, h)
+		ST:Layout(w or W, h or HGT)
+		ST:Refresh()
+	end }))
+	if not S:SavedSize("stats") then self:Layout(W, HGT) end
+end
+
+-- sizes and counts for a window of w x h
+function ST:Layout(w, h)
+	local f = self.frame
+	f:SetSize(w, h)
+	local x = PAD + LEFT_W + PAD
+	local rw = w - x - PAD
+	self.summary:SetWidth(rw - 150)
+	local top = HEAD + PAD + 24
+	local gh = math.max(GRAPH_H - 30, math.floor((h - top - PAD) * 0.45))
+	self.graph:SetSize(rw, gh)
+	local rest = h - top - gh - 28 - PAD
+	self.detailMax = math.max(1, math.min(DETAIL_MAX, math.floor(rest / (DETAIL_ROW + 2))))
+	for _, r in ipairs(self.details) do r:SetWidth(rw - DETAIL_ROW - 2) end
+	self.listMax = math.max(3, math.min(LIST_MAX, math.floor((h - HEAD - PAD - 48 - PAD) / LIST_ROW)))
 end
 
 local function spellInfo(id)
@@ -432,7 +458,7 @@ function ST:RefreshDetails(f)
 	end
 	local top = rows[1] and rows[1].value or 1
 	for i, r in ipairs(self.details) do
-		local d = rows[i]
+		local d = i <= (self.detailMax or 6) and rows[i]
 		if d then
 			r:SetMinMaxValues(0, top)
 			r:SetValue(d.value)
@@ -472,7 +498,7 @@ function ST:Refresh()
 	-- list: newest first
 	if not self.selected or not tContains(fights, self.selected) then self.selected = fights[#fights] end
 	for i, r in ipairs(self.list) do
-		local fi = fights[#fights - i + 1]
+		local fi = i <= (self.listMax or 11) and fights[#fights - i + 1]
 		if fi then
 			r.fight = fi
 			r.name:SetText(fightName(fi))
