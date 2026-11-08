@@ -157,7 +157,7 @@ local function finish()
 	f.spells = spells("damage")
 	f.healSpells = spells("healing")
 	for _, c in ipairs(f.casts) do c.channel = nil end
-	f.timeline = H.Timeline(f)
+	f.timeline, f.stack = H.Timeline(f)
 	f.t0 = nil
 	for _, r in ipairs(f.damage) do if r.me then f.myDamage = r.total end end
 	for _, r in ipairs(f.healing) do if r.me then f.myHealing = r.total end end
@@ -171,6 +171,8 @@ local function finish()
 	local list = DoA.char.fights
 	list[#list + 1] = f
 	while #list > DoA.char.stats.keep do table.remove(list, 1) end
+	-- the per-spell timeline is big: keep it for the last 30 fights
+	for i = 1, #list - 30 do list[i].stack = nil end
 	DoA:Fire("FIGHT", f)
 end
 
@@ -233,22 +235,36 @@ local function name(id)
 	return C_Spell and C_Spell.GetSpellName and C_Spell.GetSpellName(id) or (GetSpellInfo and GetSpellInfo(id)) or id
 end
 
+-- returns the total per second, and per spell: { { id = spellID, s = {...} }, ...,
+-- { other = true, s = {...} } } for the 5 biggest spells and the rest
+local STACKED = 5
 function H.Timeline(f)
 	local dur = math.min(600, math.ceil(f.duration or 0))
 	if dur < 1 then return end
-	local out = {}
+	local out, stack = {}, {}
 	for i = 1, dur do out[i] = 0 end
+	local cur -- the series the current spell adds to
 	local function add(from, len, amount)
 		from = math.max(0, math.min(dur - 1, from))
 		len = math.min(len, dur - from)
+		local first, last, per
 		if len < 1 then
-			out[math.floor(from) + 1] = out[math.floor(from) + 1] + amount
-			return
+			first, last, per = math.floor(from), math.floor(from), amount
+		else
+			first, last, per = math.floor(from), math.floor(from + len - 0.001), amount / len
 		end
-		local per = amount / len
-		for s = math.floor(from), math.floor(from + len - 0.001) do out[s + 1] = out[s + 1] + per end
+		for s = first, last do
+			out[s + 1] = out[s + 1] + per
+			cur[s + 1] = cur[s + 1] + per
+		end
 	end
-	for _, sp in ipairs(f.spells or {}) do
+	for i, sp in ipairs(f.spells or {}) do -- biggest first
+		if i <= STACKED or not stack[STACKED + 1] then
+			local entry = i <= STACKED and { id = sp.id, s = {} } or { other = true, s = {} }
+			for k = 1, dur do entry.s[k] = 0 end
+			stack[#stack + 1] = entry
+		end
+		cur = stack[math.min(i, STACKED + 1)].s
 		local mine = {}
 		local spName = name(sp.id)
 		for _, c in ipairs(f.casts or {}) do
@@ -262,7 +278,10 @@ function H.Timeline(f)
 		end
 	end
 	for i = 1, dur do out[i] = math.floor(out[i] + 0.5) end
-	return out
+	for _, e in ipairs(stack) do
+		for i = 1, dur do e.s[i] = math.floor(e.s[i] + 0.5) end
+	end
+	return out, stack
 end
 
 -- /doa check: what this client gives us

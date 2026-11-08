@@ -104,6 +104,8 @@ local function clearGraph(g)
 	for _, l in ipairs(g.grid) do l:Hide() end
 	for _, t in ipairs(g.labels) do t:Hide() end
 	for _, b in ipairs(g.icons) do b:Hide() end
+	for _, t in ipairs(g.segs or {}) do t:Hide() end
+	for _, e in ipairs(g.legend or {}) do e:Hide() end
 	g.msg:Hide()
 end
 
@@ -261,9 +263,102 @@ local function castIcons(g, f, w)
 	end
 end
 
+-- Stacked DPS per spell over the fight (an estimate, see History.Timeline).
+-- Draws in `g` inside the box x0, y0, w, h (from its bottom-left); a legend
+-- (colour, icon, name) at lx, ly from its top-left. Returns the scale top, or nil.
+local PALETTE = {
+	{ 0.41, 0.80, 0.94 }, { 0.95, 0.55, 0.25 }, { 0.62, 0.45, 0.95 },
+	{ 0.35, 0.85, 0.45 }, { 0.95, 0.80, 0.25 }, { 0.55, 0.58, 0.62 },
+}
+function ST.DrawStack(g, f, x0, y0, w, h, lx, ly)
+	g.segs, g.legend = g.segs or {}, g.legend or {}
+	for _, t in ipairs(g.segs) do t:Hide() end
+	for _, e in ipairs(g.legend) do e:Hide() end
+	local stack = f.stack
+	if not (stack and stack[1] and #stack[1].s > 0) then return end
+	local dur = #stack[1].s
+	local nb = math.max(1, math.min(dur, math.floor(w / 4)))
+	local per = dur / nb
+	local function range(b)
+		local from = math.floor((b - 1) * per) + 1
+		return from, math.max(from, math.floor(b * per))
+	end
+	local top = 1
+	for b = 1, nb do
+		local from, to = range(b)
+		local sum = 0
+		for _, e in ipairs(stack) do for i = from, to do sum = sum + (e.s[i] or 0) end end
+		top = math.max(top, sum / (to - from + 1))
+	end
+	top = top * 1.1
+	local bw, k = w / nb, 0
+	for b = 1, nb do
+		local from, to = range(b)
+		local y = 0
+		for si, e in ipairs(stack) do
+			local v = 0
+			for i = from, to do v = v + (e.s[i] or 0) end
+			v = v / (to - from + 1)
+			if v > 0 then
+				k = k + 1
+				local t = g.segs[k]
+				if not t then
+					t = g:CreateTexture(nil, "ARTWORK")
+					g.segs[k] = t
+				end
+				local c = PALETTE[si] or PALETTE[#PALETTE]
+				t:SetColorTexture(c[1], c[2], c[3], 0.85)
+				t:ClearAllPoints()
+				t:SetPoint("BOTTOMLEFT", g, "BOTTOMLEFT", x0 + (b - 1) * bw, y0 + y / top * h)
+				t:SetSize(math.max(1, bw - 1), math.max(1, v / top * h))
+				t:Show()
+				y = y + v
+			end
+		end
+	end
+	-- legend: which colour is which spell
+	local x = lx
+	for si, e in ipairs(stack) do
+		local item = g.legend[si]
+		if not item then
+			item = CreateFrame("Frame", nil, g)
+			item:SetSize(10, 10)
+			item.box = item:CreateTexture(nil, "ARTWORK")
+			item.box:SetAllPoints()
+			item.text = S:Font(item, 10)
+			item.text:SetPoint("LEFT", item, "RIGHT", 3, 0)
+			g.legend[si] = item
+		end
+		local c = PALETTE[si] or PALETTE[#PALETTE]
+		item.box:SetColorTexture(c[1], c[2], c[3], 1)
+		item.text:SetText(e.other and L["Other"] or spellName(e.id))
+		item:ClearAllPoints()
+		item:SetPoint("TOPLEFT", g, "TOPLEFT", x, -ly)
+		local wide = 14 + item.text:GetStringWidth() + 10
+		item:SetShown(x + wide - lx <= w)
+		x = x + wide
+	end
+	return top
+end
+
 -- the DPS of one fight over time: measured when the client showed the
 -- numbers in combat, else estimated from your casts (History.Timeline)
 local function drawCurve(g, f, fights)
+	-- stacked per spell when we have it (fights from now on)
+	if f.stack and not H.Curve(f.samples, 5) then
+		clearGraph(g)
+		g.title:SetText("")
+		local w, h = area(g)
+		local top = ST.DrawStack(g, f, INSET_L, INSET_B, w, h - 4, 6, 4)
+		if top then
+			grid(g, top)
+			local n = #g.grid + 1
+			label(g, n, "0:00", INSET_L, INSET_B - 2, "TOPLEFT")
+			label(g, n + 1, Clock(f.duration), INSET_L + w, INSET_B - 2, "TOPRIGHT")
+			castIcons(g, f, w)
+			return
+		end
+	end
 	local curve, estimate = H.Curve(f.samples, 5), false
 	if not curve and f.timeline and #f.timeline >= 3 then curve, estimate = smooth(f.timeline, 2), true end
 	if not curve or #curve < 3 then return drawCompare(g, f, fights) end

@@ -244,32 +244,62 @@ end
 local COLS = 60
 local series = {}
 
-local function myTotal()
+local function mySource()
 	if not (C_DamageMeter and C_DamageMeter.GetCombatSessionSourceFromType and Enum and Enum.DamageMeterType) then return end
 	local m = modeOf(cfg().mode)
 	local ok, s = pcall(C_DamageMeter.GetCombatSessionSourceFromType, Enum.DamageMeterSessionType.Current,
 		Enum.DamageMeterType[m.enum], UnitGUID("player"))
-	if ok and Open(s) then return s.totalAmount end
+	if ok and Open(s) then return s end
 end
 
 function M:Sample()
-	local v = myTotal()
+	local src = mySource()
+	local v = src and src.totalAmount
 	if not IsSecret(v) and v == nil then return end
 	series[#series + 1] = v
 	if #series > COLS then table.remove(series, 1) end
 end
 M.series = series -- for tests
 
+-- Layout of the graph area (height h), from the top:
+--   "DPS 13.8" left, "Total 110" right
+--   legend (after the fight) or a short note (live)
+--   the chart, with its top value at the left
+--   time axis: 0:00 ... 0:37 (after) or -60s ... now (live)
+local TOP_LINE, LEGEND, AXIS = 13, 13, 11
+
+local function font(g, size, muted)
+	local fs = S:Font(g, size)
+	if muted then fs:SetTextColor(unpack(S.colors.muted)) end
+	return fs
+end
+
 function M:DrawGraph(height)
 	local g = self.graph
 	if not g then
 		g = CreateFrame("Frame", nil, self.frame)
 		g.cols = {}
-		g.label = S:Font(g, 10)
-		g.label:SetPoint("TOPLEFT", 2, -1)
-		g.label:SetTextColor(unpack(S.colors.muted))
-		g.value = S:Font(g, 10)
+		g.dpsLabel = font(g, 10, true)
+		g.dpsLabel:SetPoint("TOPLEFT", 2, -1)
+		g.dps = font(g, 11)
+		g.dps:SetPoint("LEFT", g.dpsLabel, "RIGHT", 4, 0)
+		g.value = font(g, 11)
 		g.value:SetPoint("TOPRIGHT", -2, -1)
+		g.label = font(g, 10, true)
+		g.label:SetPoint("RIGHT", g.value, "LEFT", -4, 0)
+		g.note = font(g, 9, true)
+		g.note:SetPoint("TOPLEFT", 2, -TOP_LINE - 1)
+		g.yTop = font(g, 9, true)
+		g.axL = font(g, 9, true)
+		g.axL:SetPoint("BOTTOMLEFT", 2, 0)
+		g.axR = font(g, 9, true)
+		g.axR:SetPoint("BOTTOMRIGHT", -2, 0)
+		g.topLine = g:CreateTexture(nil, "BORDER")
+		g.topLine:SetColorTexture(1, 1, 1, 0.08)
+		g.topLine:SetHeight(1)
+		g.base = g:CreateTexture(nil, "BORDER")
+		g.base:SetColorTexture(1, 1, 1, 0.15)
+		g.base:SetHeight(1)
 		self.graph = g
 	end
 	g:ClearAllPoints()
@@ -277,12 +307,54 @@ function M:DrawGraph(height)
 	g:SetPoint("TOPRIGHT", -PAD, -HEADER - PAD)
 	g:SetHeight(height)
 	g:Show()
+
 	local healing = modeOf(cfg().mode).enum == "HealingDone"
-	g.label:SetText(healing and L["Your healing, live"] or L["Your damage, live"])
+	g.dpsLabel:SetText(healing and L["HPS"] or L["DPS"])
+	g.label:SetText(L["Total"])
+	local w = self.frame:GetWidth() - PAD * 2
+	local chartY, chartH = AXIS + 1, math.max(8, height - TOP_LINE - LEGEND - AXIS - 2)
+	-- frame of the chart: a faint line at its top, a clearer one at the bottom
+	g.topLine:ClearAllPoints()
+	g.topLine:SetPoint("BOTTOMLEFT", g, "BOTTOMLEFT", 0, chartY + chartH)
+	g.topLine:SetWidth(w)
+	g.base:ClearAllPoints()
+	g.base:SetPoint("BOTTOMLEFT", g, "BOTTOMLEFT", 0, chartY - 1)
+	g.base:SetWidth(w)
+	g.yTop:ClearAllPoints()
+	g.yTop:SetPoint("BOTTOMLEFT", g, "BOTTOMLEFT", 2, chartY + chartH + 1)
+
 	local n = #series
 	local top = series[n]
-	if n > 0 then pcall(g.value.SetText, g.value, Short(top)) else g.value:SetText("") end
-	local cw = (self.frame:GetWidth() - PAD * 2) / COLS
+	local last = DoA.char.fights[#DoA.char.fights]
+
+	-- after the fight: your spells stacked (the numbers are readable again)
+	if not InCombatLockdown() and not healing and last and last.stack and DoA.Stats.DrawStack then
+		for _, col in ipairs(g.cols) do col:Hide() end
+		g.dps:SetText(Short(DoA.History.DPS(last)))
+		g.value:SetText(Short(last.myDamage or 0))
+		g.note:SetText("")
+		local scale = DoA.Stats.DrawStack(g, last, 0, chartY, w, chartH, 2, TOP_LINE + 1)
+		g.yTop:SetText(scale and (Short(scale) .. " " .. L["DPS"]) or "")
+		g.axL:SetText("0:00")
+		g.axR:SetText(DoA.Clock(last.duration))
+		return 1
+	end
+	if DoA.Stats.DrawStack then DoA.Stats.DrawStack(g, {}, 0, 0, 0, 0, 0, 0) end -- clears it
+
+	-- in combat: your total so far, one column per second (the scale is that total)
+	local src = InCombatLockdown() and mySource()
+	if src then pcall(g.dps.SetText, g.dps, Short(src.amountPerSecond)) elseif n == 0 then g.dps:SetText("") end
+	if n > 0 then
+		pcall(g.value.SetText, g.value, Short(top))
+		pcall(g.yTop.SetText, g.yTop, Short(top))
+	else
+		g.value:SetText("")
+		g.yTop:SetText("")
+	end
+	g.note:SetText(L["Total so far, one column per second"])
+	g.axL:SetText(n > 0 and ("-" .. n .. "s") or "")
+	g.axR:SetText(L["now"])
+	local cw = w / COLS
 	local c = S.colors.accent
 	for i = 1, COLS do
 		local col = g.cols[i]
@@ -293,8 +365,8 @@ function M:DrawGraph(height)
 			g.cols[i] = col
 		end
 		col:ClearAllPoints()
-		col:SetPoint("BOTTOMLEFT", g, "BOTTOMLEFT", (i - 1) * cw, 0)
-		col:SetSize(math.max(1, cw - 1), math.max(4, height - 14))
+		col:SetPoint("BOTTOMLEFT", g, "BOTTOMLEFT", (i - 1) * cw, chartY)
+		col:SetSize(math.max(1, cw - 1), chartH)
 		local idx = n - COLS + i
 		if idx >= 1 then
 			col:SetStatusBarColor(c[1], c[2], c[3], 0.35 + 0.65 * i / COLS)
