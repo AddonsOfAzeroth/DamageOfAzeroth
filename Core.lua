@@ -21,6 +21,7 @@ local charDefaults = {
 		rows = 8,            -- rows that fit (taller meter = more)
 		width = 220,
 		hideEmpty = false,   -- hide the meter until the first fight
+		graph = false,       -- live graph instead of the list
 	},
 	stats = {
 		filter = "all",  -- all, solo, party, raid

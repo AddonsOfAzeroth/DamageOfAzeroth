@@ -112,8 +112,15 @@ function M:Build()
 	fit(self.reset, L["Reset"])
 	self.reset.color = S.colors.muted
 	self.reset.text:SetTextColor(unpack(S.colors.muted))
+	self.graphBtn = headerButton(f, "Click: live graph or the list.", function()
+		cfg().graph = not cfg().graph
+		M:Refresh()
+	end)
+	self.graphBtn.color = S.colors.accent
+	self.graphBtn.text:SetTextColor(unpack(S.colors.accent))
 	self.reset:SetPoint("RIGHT", self.when, "LEFT", 0, 0)
 	self.stats:SetPoint("RIGHT", self.reset, "LEFT", 0, 0)
+	self.graphBtn:SetPoint("RIGHT", self.stats, "LEFT", 0, 0)
 	self:ShowTools(false)
 
 	local line = f:CreateTexture(nil, "ARTWORK")
@@ -144,6 +151,7 @@ function M:ShowTools(on)
 	on = on and self.frame:IsMouseOver()
 	self.stats:SetShown(on)
 	self.reset:SetShown(on)
+	self.graphBtn:SetShown(on)
 end
 
 local function row(i)
@@ -204,6 +212,18 @@ function M:Refresh()
 		end
 	end
 	for i = n + 1, #self.rows do self.rows[i]:Hide() end
+	fit(self.graphBtn, c.graph and L["List"] or L["Graph"])
+	if c.graph then
+		for _, r in ipairs(self.rows) do r:Hide() end
+		local body = math.max(4, c.rows) * (ROW_H + 1)
+		local samples = self:DrawGraph(body)
+		self.empty:SetShown(samples == 0)
+		self.empty:SetText(L["The graph fills during your next fight."])
+		f:SetHeight(HEADER + PAD * 2 + body)
+		return f:SetShown(true)
+	elseif self.graph then
+		self.graph:Hide()
+	end
 
 	local none = n == 0
 	self.empty:SetShown(none)
@@ -213,6 +233,78 @@ function M:Refresh()
 	if not DoA:FramesLocked() then body = c.rows * (ROW_H + 1) end
 	f:SetHeight(HEADER + PAD * 2 + body)
 	f:SetShown(not (none and c.hideEmpty and not InCombatLockdown()))
+end
+
+---------------------------------------------------------------------------
+-- Live graph: your total so far, one column per second (the last 60 s). In
+-- combat the amounts are hidden; a status bar takes them as they are, and the
+-- newest total is the top of the scale (it only grows), so no maths is needed.
+-- The steeper the columns rise, the higher your DPS.
+---------------------------------------------------------------------------
+local COLS = 60
+local series = {}
+
+local function myTotal()
+	if not (C_DamageMeter and C_DamageMeter.GetCombatSessionSourceFromType and Enum and Enum.DamageMeterType) then return end
+	local m = modeOf(cfg().mode)
+	local ok, s = pcall(C_DamageMeter.GetCombatSessionSourceFromType, Enum.DamageMeterSessionType.Current,
+		Enum.DamageMeterType[m.enum], UnitGUID("player"))
+	if ok and Open(s) then return s.totalAmount end
+end
+
+function M:Sample()
+	local v = myTotal()
+	if not IsSecret(v) and v == nil then return end
+	series[#series + 1] = v
+	if #series > COLS then table.remove(series, 1) end
+end
+M.series = series -- for tests
+
+function M:DrawGraph(height)
+	local g = self.graph
+	if not g then
+		g = CreateFrame("Frame", nil, self.frame)
+		g.cols = {}
+		g.label = S:Font(g, 10)
+		g.label:SetPoint("TOPLEFT", 2, -1)
+		g.label:SetTextColor(unpack(S.colors.muted))
+		g.value = S:Font(g, 10)
+		g.value:SetPoint("TOPRIGHT", -2, -1)
+		self.graph = g
+	end
+	g:ClearAllPoints()
+	g:SetPoint("TOPLEFT", PAD, -HEADER - PAD)
+	g:SetPoint("TOPRIGHT", -PAD, -HEADER - PAD)
+	g:SetHeight(height)
+	g:Show()
+	local healing = modeOf(cfg().mode).enum == "HealingDone"
+	g.label:SetText(healing and L["Your healing, live"] or L["Your damage, live"])
+	local n = #series
+	local top = series[n]
+	if n > 0 then pcall(g.value.SetText, g.value, Short(top)) else g.value:SetText("") end
+	local cw = (self.frame:GetWidth() - PAD * 2) / COLS
+	local c = S.colors.accent
+	for i = 1, COLS do
+		local col = g.cols[i]
+		if not col then
+			col = CreateFrame("StatusBar", nil, g)
+			col:SetStatusBarTexture(S.flat)
+			col:SetOrientation("VERTICAL")
+			g.cols[i] = col
+		end
+		col:ClearAllPoints()
+		col:SetPoint("BOTTOMLEFT", g, "BOTTOMLEFT", (i - 1) * cw, 0)
+		col:SetSize(math.max(1, cw - 1), math.max(4, height - 14))
+		local idx = n - COLS + i
+		if idx >= 1 then
+			col:SetStatusBarColor(c[1], c[2], c[3], 0.35 + 0.65 * i / COLS)
+			local ok = pcall(col.SetMinMaxValues, col, 0, top) and pcall(col.SetValue, col, series[idx])
+			col:SetShown(ok and true or false)
+		else
+			col:Hide()
+		end
+	end
+	return n
 end
 
 function M:OnEnable()
@@ -235,8 +327,11 @@ function M:OnEnable()
 	end)
 	-- the fight clock keeps running between updates
 	C_Timer.NewTicker(1, function()
-		if InCombatLockdown() and M.frame:IsShown() then pcall(M.Refresh, M) end
+		if not InCombatLockdown() then return end
+		pcall(M.Sample, M)
+		if M.frame:IsShown() then pcall(M.Refresh, M) end
 	end)
+	DoA:On("PLAYER_REGEN_DISABLED", function() wipe(series) end)
 	DoA:Listen("SETTINGS", function(group) if group == "meter" or group == "bars" then pcall(M.Refresh, M) end end)
 	pcall(M.Refresh, M)
 end
