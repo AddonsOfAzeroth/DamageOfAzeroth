@@ -1,0 +1,17 @@
+## Interface: 16001
+## Title: Damage of Azeroth
+## Notes: Damage meter, fight history and statistics with graphs. Solo, party and raid.
+## Notes-nlNL: Damage meter, gevechtsgeschiedenis en statistieken met grafieken. Solo, groep en raid.
+## Author: DinX
+## Version: 0.1.0
+## IconTexture: Interface\Icons\Ability_DualWield
+## SavedVariables: DamageOfAzerothDB
+## SavedVariablesPerCharacter: DamageOfAzerothCharDB
+## OptionalDeps: CastersOfAzeroth
+
+Core.lua
+Locale.lua
+Style.lua
+History.lua
+Meter.lua
+Stats.lua
