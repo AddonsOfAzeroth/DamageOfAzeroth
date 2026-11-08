@@ -227,6 +227,8 @@ SlashCmdList.DAMAGEOFAZEROTH = function(msg)
 	local L = DoA.L
 	if msg == "" or msg == "stats" then
 		DoA.Stats:Toggle()
+	elseif msg == "config" or msg == "settings" then
+		DoA:ToggleConfig()
 	elseif msg == "meter" then
 		DoA.char.meter.enabled = not DoA.char.meter.enabled
 		DoA:Fire("SETTINGS", "meter")
@@ -239,7 +241,7 @@ SlashCmdList.DAMAGEOFAZEROTH = function(msg)
 		DoA.debug = not DoA.debug
 		DoA:Print("debug " .. (DoA.debug and "on" or "off"))
 	else
-		DoA:Print(L["/doa: statistics. /doa meter: meter on/off. /doa unlock: move the frames. /doa check: what this client allows."])
+		DoA:Print(L["/doa: statistics. /doa config: settings. /doa meter: meter on/off. /doa unlock: move the frames. /doa check: what this client allows."])
 	end
 end
 

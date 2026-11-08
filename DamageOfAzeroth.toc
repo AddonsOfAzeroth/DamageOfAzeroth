@@ -15,3 +15,4 @@ Style.lua
 History.lua
 Meter.lua
 Stats.lua
+Config.lua

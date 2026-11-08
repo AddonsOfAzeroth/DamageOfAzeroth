@@ -87,5 +87,14 @@ for k, v in pairs({
 	["Usual raid"] = "Meestal in raid",
 	["Drag: make it bigger so more fits. Double-click: default size."] = "Slepen: groter maken zodat er meer in past. Dubbelklik: standaardgrootte.",
 	-- probe / slash
-	["/doa: statistics. /doa meter: meter on/off. /doa unlock: move the frames. /doa check: what this client allows."] = "/doa: statistieken. /doa meter: meter aan/uit. /doa unlock: frames verplaatsen. /doa check: wat deze client toelaat.",
+	["/doa: statistics. /doa config: settings. /doa meter: meter on/off. /doa unlock: move the frames. /doa check: what this client allows."] = "/doa: statistieken. /doa config: instellingen. /doa meter: meter aan/uit. /doa unlock: frames verplaatsen. /doa check: wat deze client toelaat.",
+	["/doa opens the statistics. Unlock the frames to move the meter and drag its corner to make it bigger."] = "/doa opent de statistieken. Ontgrendel de kaders om de meter te verplaatsen, en sleep zijn hoek om hem groter te maken.",
+	["Meter on"] = "Meter aan",
+	["Meter"] = "Meter",
+	["Live graph instead of the list"] = "Live grafiek in plaats van de lijst",
+	["Also with the Graph / List button on the meter."] = "Ook met de knop Grafiek / Lijst op de meter.",
+	["Hide the meter until the first fight"] = "Meter verbergen tot het eerste gevecht",
+	["Language"] = "Taal",
+	["Automatic"] = "Automatisch",
+	["Saved fights deleted."] = "Bewaarde gevechten gewist.",
 }) do NL[k] = v end
