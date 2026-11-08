@@ -63,6 +63,8 @@ for k, v in pairs({
 	["Delete all saved fights of this character?"] = "Alle bewaarde gevechten van dit karakter wissen?",
 	["Your share"] = "Jouw deel",
 	["This fight compared"] = "Dit gevecht vergeleken",
+	["Compare"] = "Vergelijking",
+	["DPS over the fight (estimate from your casts)"] = "DPS tijdens het gevecht (schatting uit je casts)",
 	["Usual vs %s"] = "Meestal tegen %s",
 	["Usual solo"] = "Meestal solo",
 	["Usual party"] = "Meestal in groep",

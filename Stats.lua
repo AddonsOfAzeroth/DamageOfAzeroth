@@ -87,7 +87,7 @@ end
 ---------------------------------------------------------------------------
 local function newGraph(parent)
 	local g = panel(parent)
-	g.lines, g.bars, g.grid, g.labels = {}, {}, {}, {}
+	g.lines, g.bars, g.grid, g.labels, g.icons = {}, {}, {}, {}, {}
 	g.msg = S:Font(g, 11)
 	g.msg:SetPoint("CENTER")
 	g.msg:SetTextColor(unpack(S.colors.muted))
@@ -103,6 +103,7 @@ local function clearGraph(g)
 	for _, b in ipairs(g.bars) do b:Hide() end
 	for _, l in ipairs(g.grid) do l:Hide() end
 	for _, t in ipairs(g.labels) do t:Hide() end
+	for _, b in ipairs(g.icons) do b:Hide() end
 	g.msg:Hide()
 end
 
@@ -208,12 +209,66 @@ local function drawCompare(g, f, fights)
 	end
 end
 
--- the DPS curve of one fight (only when the client showed the numbers in combat)
+-- moving average over `w` seconds around each point
+local function smooth(t, w)
+	local out = {}
+	for i = 1, #t do
+		local sum, n = 0, 0
+		for j = math.max(1, i - w), math.min(#t, i + w) do sum, n = sum + t[j], n + 1 end
+		out[i] = sum / n
+	end
+	return out
+end
+
+local function spellName(id)
+	return C_Spell and C_Spell.GetSpellName and C_Spell.GetSpellName(id) or (GetSpellInfo and GetSpellInfo(id)) or ("#" .. id)
+end
+
+-- your casts as small icons on the time axis (hover: spell and time)
+local function castIcons(g, f, w)
+	local dur = f.duration or 0
+	if dur <= 0 then return end
+	local lastX = -99
+	local n = 0
+	for _, c in ipairs(f.casts or {}) do
+		local x = c.t / dur * w
+		if x - lastX >= 11 and x <= w then
+			n = n + 1
+			local b = g.icons[n]
+			if not b then
+				b = CreateFrame("Button", nil, g)
+				b:SetSize(10, 10)
+				b.tex = b:CreateTexture(nil, "OVERLAY")
+				b.tex:SetAllPoints()
+				b.tex:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+				b:SetScript("OnEnter", function(self)
+					GameTooltip:SetOwner(self, "ANCHOR_TOP")
+					GameTooltip:AddLine(spellName(self.cast.id), 1, 1, 1)
+					GameTooltip:AddLine(Clock(self.cast.t), 0.7, 0.7, 0.7)
+					GameTooltip:Show()
+				end)
+				b:SetScript("OnLeave", function() GameTooltip:Hide() end)
+				g.icons[n] = b
+			end
+			b.cast = c
+			local icon = C_Spell and C_Spell.GetSpellTexture and C_Spell.GetSpellTexture(c.id)
+			b.tex:SetTexture(icon or "Interface\\Icons\\INV_Misc_QuestionMark")
+			b:ClearAllPoints()
+			b:SetPoint("BOTTOM", g, "BOTTOMLEFT", INSET_L + x, INSET_B + 1)
+			b:Show()
+			lastX = x
+		end
+	end
+end
+
+-- the DPS of one fight over time: measured when the client showed the
+-- numbers in combat, else estimated from your casts (History.Timeline)
 local function drawCurve(g, f, fights)
-	local curve = H.Curve(f.samples, 5)
+	local curve, estimate = H.Curve(f.samples, 5), false
+	if not curve and f.timeline and #f.timeline >= 3 then curve, estimate = smooth(f.timeline, 2), true end
 	if not curve or #curve < 3 then return drawCompare(g, f, fights) end
 	clearGraph(g)
-	g.title:SetText(L["DPS over the fight"])
+	g.title:SetText(estimate and L["DPS over the fight (estimate from your casts)"] or L["DPS over the fight"])
 	local max = 1
 	for _, v in ipairs(curve) do if v and v > max then max = v end end
 	max = max * 1.1
@@ -243,6 +298,7 @@ local function drawCurve(g, f, fights)
 	end
 	label(g, nextLabel, "0:00", INSET_L, INSET_B - 2, "TOPLEFT")
 	label(g, nextLabel + 1, Clock(f.duration), INSET_L + w, INSET_B - 2, "TOPRIGHT")
+	castIcons(g, f, w)
 end
 
 -- bars: DPS of the last fights, coloured by solo / party / raid
@@ -411,10 +467,12 @@ function ST:Build()
 
 	self.viewTabs = {
 		fight = tab(f, L["This fight"], function() cfg().view = "fight" ST:Refresh() end),
+		compare = tab(f, L["Compare"], function() cfg().view = "compare" ST:Refresh() end),
 		trend = tab(f, L["Trend"], function() cfg().view = "trend" ST:Refresh() end),
 	}
 	self.viewTabs.trend:SetPoint("TOPRIGHT", f, "TOPRIGHT", -PAD, -HEAD - PAD + 2)
-	self.viewTabs.fight:SetPoint("RIGHT", self.viewTabs.trend, "LEFT", 0, 0)
+	self.viewTabs.compare:SetPoint("RIGHT", self.viewTabs.trend, "LEFT", 0, 0)
+	self.viewTabs.fight:SetPoint("RIGHT", self.viewTabs.compare, "LEFT", 0, 0)
 
 	self.graph = newGraph(f)
 	self.graph:SetPoint("TOPLEFT", x, -HEAD - PAD - 24)
@@ -463,7 +521,7 @@ function ST:Layout(w, h)
 	f:SetSize(w, h)
 	local x = PAD + LEFT_W + PAD
 	local rw = w - x - PAD
-	self.summary:SetWidth(rw - 150)
+	self.summary:SetWidth(rw - 210)
 	local top = HEAD + PAD + 24
 	local gh = math.max(GRAPH_H - 30, math.floor((h - top - PAD) * 0.45))
 	self.graph:SetSize(rw, gh)
@@ -576,6 +634,7 @@ function ST:Refresh()
 	end
 
 	if c.view == "trend" then drawTrend(self.graph, fights, sel)
+	elseif sel and c.view == "compare" then drawCompare(self.graph, sel, fights)
 	elseif sel then drawCurve(self.graph, sel, fights)
 	else drawTrend(self.graph, fights, sel) end
 	self:RefreshDetails(sel)

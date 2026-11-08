@@ -56,16 +56,52 @@ local function sample()
 	end
 end
 
+-- Your own casts are not hidden: they give the timeline its moments.
+-- { t = seconds into the fight, id = spellID, d = channel seconds }
+local lastCast -- the cast just before combat (the pull) belongs to the fight
+local function onCast(id, channel)
+	id = Safe(id, nil)
+	if type(id) ~= "number" then return end
+	local now = GetTime()
+	if not fight then
+		lastCast = { at = now, id = id }
+		return
+	end
+	local casts = fight.casts
+	if #casts >= 400 then return end
+	local t = now - fight.t0
+	local prev = casts[#casts]
+	-- a channel also reports a normal cast: keep one entry
+	if channel and prev and prev.id == id and t - prev.t < 0.3 then
+		prev.channel = now
+		return
+	end
+	casts[#casts + 1] = { t = math.floor(t * 10 + 0.5) / 10, id = id, channel = channel and now or nil }
+end
+
+local function channelStop()
+	local c = fight and fight.casts[#fight.casts]
+	if c and c.channel then
+		c.d = math.floor((GetTime() - c.channel) * 10 + 0.5) / 10
+		c.channel = nil
+	end
+end
+
 local function start()
 	local enemy = Safe(UnitName("target"), nil)
 	if not (type(enemy) == "string" and Safe(UnitCanAttack("player", "target"), false)) then enemy = nil end
+	local now = GetTime()
 	fight = {
 		started = time(),
+		t0 = now,
 		group = groupType(),
 		zone = Safe(GetRealZoneText and GetRealZoneText(), nil),
 		enemy = enemy,
 		samples = {},
+		casts = {},
 	}
+	if lastCast and now - lastCast.at < 2.5 then fight.casts[1] = { t = 0, id = lastCast.id } end
+	lastCast = nil
 	H.ticker = H.ticker or C_Timer.NewTicker(1, function() pcall(sample) end)
 end
 
@@ -120,6 +156,9 @@ local function finish()
 	f.healing = sources(heal)
 	f.spells = spells("damage")
 	f.healSpells = spells("healing")
+	for _, c in ipairs(f.casts) do c.channel = nil end
+	f.timeline = H.Timeline(f)
+	f.t0 = nil
 	for _, r in ipairs(f.damage) do if r.me then f.myDamage = r.total end end
 	for _, r in ipairs(f.healing) do if r.me then f.myHealing = r.total end end
 	if not (f.myDamage or f.myHealing) then return end
@@ -165,6 +204,67 @@ function H.Curve(samples, window)
 	return out
 end
 
+---------------------------------------------------------------------------
+-- Timeline (an estimate): each spell's total after the fight, shared over its
+-- casts; a DoT spread over its duration, a channel over the channel time;
+-- damage without casts (melee, procs) spread over the whole fight.
+---------------------------------------------------------------------------
+local overCache = {}
+local function overTime(id) -- "... over 18 sec" in the spell's tooltip
+	if overCache[id] == nil then
+		local sec = false
+		if C_TooltipInfo and C_TooltipInfo.GetSpellByID then
+			local ok, data = pcall(C_TooltipInfo.GetSpellByID, id)
+			if ok and Open(data) and Open(data.lines) then
+				for _, line in ipairs(data.lines) do
+					local t = Open(line) and Safe(line.leftText, nil)
+					local n = type(t) == "string" and t:lower():match("over (%d+%.?%d*) sec")
+					if n then sec = tonumber(n) break end
+				end
+			end
+		end
+		overCache[id] = sec
+	end
+	return overCache[id] or nil
+end
+H.OverTime = overTime
+
+local function name(id)
+	return C_Spell and C_Spell.GetSpellName and C_Spell.GetSpellName(id) or (GetSpellInfo and GetSpellInfo(id)) or id
+end
+
+function H.Timeline(f)
+	local dur = math.min(600, math.ceil(f.duration or 0))
+	if dur < 1 then return end
+	local out = {}
+	for i = 1, dur do out[i] = 0 end
+	local function add(from, len, amount)
+		from = math.max(0, math.min(dur - 1, from))
+		len = math.min(len, dur - from)
+		if len < 1 then
+			out[math.floor(from) + 1] = out[math.floor(from) + 1] + amount
+			return
+		end
+		local per = amount / len
+		for s = math.floor(from), math.floor(from + len - 0.001) do out[s + 1] = out[s + 1] + per end
+	end
+	for _, sp in ipairs(f.spells or {}) do
+		local mine = {}
+		local spName = name(sp.id)
+		for _, c in ipairs(f.casts or {}) do
+			if c.id == sp.id or name(c.id) == spName then mine[#mine + 1] = c end
+		end
+		if #mine > 0 then
+			local per = sp.total / #mine
+			for _, c in ipairs(mine) do add(c.t, c.d or overTime(c.id) or 0, per) end
+		else
+			add(0, dur, sp.total)
+		end
+	end
+	for i = 1, dur do out[i] = math.floor(out[i] + 0.5) end
+	return out
+end
+
 -- /doa check: what this client gives us
 function H:Probe()
 	if not api() then return DoA:Print("C_DamageMeter: -") end
@@ -180,6 +280,9 @@ end
 
 function H:OnEnable()
 	DoA:On("PLAYER_REGEN_DISABLED", function() pcall(start) end)
+	DoA:On("UNIT_SPELLCAST_SUCCEEDED", function(_, unit, _, id) if unit == "player" then pcall(onCast, id) end end)
+	DoA:On("UNIT_SPELLCAST_CHANNEL_START", function(_, unit, _, id) if unit == "player" then pcall(onCast, id, true) end end)
+	DoA:On("UNIT_SPELLCAST_CHANNEL_STOP", function(_, unit) if unit == "player" then pcall(channelStop) end end)
 	-- Blizzard's meter settles a moment after the fight
 	DoA:On("PLAYER_REGEN_ENABLED", function()
 		C_Timer.After(1.5, function()
