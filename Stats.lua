@@ -108,6 +108,7 @@ local function clearGraph(g)
 	for _, e in ipairs(g.legend or {}) do e:Hide() end
 	for _, l in ipairs(g.dl or {}) do l:Hide() end
 	for _, t in ipairs(g.cl or {}) do t:Hide() end
+	for _, t in ipairs(g.gl or {}) do t:Hide() end
 	if g.sep then g.sep:Hide() end
 	g.msg:Hide()
 end
@@ -351,6 +352,7 @@ function ST.DrawCombo(g, f, x0, y0, w, h, lx, ly)
 	g.dl, g.cl = g.dl or {}, g.cl or {}
 	for _, l in ipairs(g.dl) do l:Hide() end
 	for _, t in ipairs(g.cl) do t:Hide() end
+	for _, t in ipairs(g.gl or {}) do t:Hide() end
 	if g.sep then g.sep:Hide() end
 	if not (f.timeline and #f.timeline >= 2) then return end
 	local hs = math.floor(h * 0.45)
@@ -362,6 +364,13 @@ function ST.DrawCombo(g, f, x0, y0, w, h, lx, ly)
 	local dps = smooth(f.timeline, 2)
 	local total, run = {}, 0
 	for i, v in ipairs(f.timeline) do run = run + v total[i] = run end
+	-- end on Blizzard's own total (the spells can add up a little differently)
+	local real = f.myDamage or f.total
+	if real and real > 0 and run > 0 then
+		local k = real / run
+		for i = 1, #total do total[i] = total[i] * k end
+		run = real
+	end
 	local maxD, maxT = 1, math.max(1, run)
 	for _, v in ipairs(dps) do maxD = math.max(maxD, v) end
 	maxD = maxD * 1.1
@@ -414,6 +423,30 @@ function ST.DrawCombo(g, f, x0, y0, w, h, lx, ly)
 	if stackTop then
 		text(3, ("%s  ·  max %s %s"):format(L["Per spell"], Short(stackTop / 1.1), L["DPS"]), S.colors.muted,
 			"BOTTOMLEFT", x0, y0 + hs + 1)
+	end
+	-- y axes: a faint line halfway each chart, with its value (DPS left, total right)
+	g.gl = g.gl or {}
+	local function gridAt(i, y)
+		local t = g.gl[i]
+		if not t then
+			t = g:CreateTexture(nil, "BORDER")
+			t:SetColorTexture(1, 1, 1, 0.07)
+			t:SetHeight(1)
+			g.gl[i] = t
+		end
+		t:ClearAllPoints()
+		t:SetPoint("BOTTOMLEFT", g, "BOTTOMLEFT", x0, y)
+		t:SetWidth(w)
+		t:Show()
+	end
+	gridAt(1, y1 + hl / 2)
+	text(4, Short(maxD / 2), DPS_COLOR, "BOTTOMLEFT", x0 + 1, y1 + hl / 2 + 1)
+	text(5, Short(maxT / 2), TOTAL_COLOR, "BOTTOMRIGHT", x0 + w - 1, y1 + hl / 2 + 1)
+	if stackTop then
+		gridAt(2, y0 + hs / 2)
+		text(6, Short(stackTop / 2), S.colors.muted, "BOTTOMLEFT", x0 + 1, y0 + hs / 2 + 1)
+	elseif g.gl[2] then
+		g.gl[2]:Hide()
 	end
 	if not g.sep then
 		g.sep = g:CreateTexture(nil, "BORDER")
