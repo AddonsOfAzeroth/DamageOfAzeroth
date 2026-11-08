@@ -431,7 +431,7 @@ end
 -- numbers in combat, else estimated from your casts (History.Timeline)
 local function drawCurve(g, f, fights)
 	-- stacked per spell when we have it (fights from now on)
-	if f.stack and not H.Curve(f.samples, 5) then
+	if f.stack then
 		clearGraph(g)
 		g.title:SetText("")
 		local w, h = area(g)

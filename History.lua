@@ -44,16 +44,81 @@ end
 ---------------------------------------------------------------------------
 local fight -- the running fight, or nil
 
+-- your own entry asked by your GUID: readable in combat on some clients,
+-- where the group list hides who is who
+local function mySource(kind)
+	if not (api() and C_DamageMeter.GetCombatSessionSourceFromType) then return end
+	local ok, s = pcall(C_DamageMeter.GetCombatSessionSourceFromType, Enum.DamageMeterSessionType.Current,
+		Enum.DamageMeterType[TYPES[kind]], UnitGUID("player"))
+	if ok and Open(s) then return s end
+end
+H.MySource = mySource
+
+-- every second: your total and each spell's total so far (when readable)
 local function sample()
 	if not fight then return end
-	local src = mine(current("damage"))
+	local src = mySource("damage") or mine(current("damage"))
 	local v = src and Safe(src.totalAmount, nil)
+	local live = fight.live
 	if type(v) == "number" then
 		fight.samples[#fight.samples + 1] = v
+		local n = live.n + 1
+		live.n = n
+		live.totals[n] = v
+		if Open(src.combatSpells) then
+			for _, sp in ipairs(src.combatSpells) do
+				local id, total = Open(sp) and Safe(sp.spellID, nil), Open(sp) and Safe(sp.totalAmount, nil)
+				if type(id) == "number" and type(total) == "number" then
+					live.spells[id] = live.spells[id] or {}
+					live.spells[id][n] = total
+				end
+			end
+		end
 	else
 		fight.hidden = true
+		live.secret = true
 		fight.samples[#fight.samples + 1] = false -- keeps the timeline
 	end
+end
+
+-- measured timeline from the samples: damage per second, total and per spell
+-- (the 5 biggest and the rest), in the same shape as H.Timeline
+local function fromLive(live)
+	local n = live.n
+	local timeline = {}
+	for i = 1, n do timeline[i] = math.max(0, live.totals[i] - (live.totals[i - 1] or 0)) end
+	local order = {}
+	for id, t in pairs(live.spells) do
+		local last = 0
+		for i = 1, n do if t[i] then last = t[i] end end
+		order[#order + 1] = { id = id, final = last }
+	end
+	table.sort(order, function(a, b) return a.final > b.final end)
+	local stack = {}
+	for k, o in ipairs(order) do
+		local e = k <= 5 and { id = o.id, s = {} } or stack[6]
+		if not e then
+			e = { other = true, s = {} }
+			for i = 1, n do e.s[i] = 0 end
+		end
+		local t, prev = live.spells[o.id], 0
+		for i = 1, n do
+			local cur = t[i] or prev
+			e.s[i] = (k <= 5 and 0 or e.s[i]) + math.max(0, cur - prev)
+			prev = cur
+		end
+		stack[math.min(k, 6)] = e
+	end
+	return timeline, stack
+end
+
+-- the running fight as a chart can draw it, or nil (hidden numbers / too early)
+function H.LiveFight()
+	local live = fight and fight.live
+	if not live or live.secret or live.n < 2 then return end
+	local timeline, stack = fromLive(live)
+	local total = live.totals[live.n]
+	return { timeline = timeline, stack = stack, duration = live.n, total = total, dps = total / live.n }
 end
 
 -- Your own casts are not hidden: they give the timeline its moments.
@@ -99,6 +164,7 @@ local function start()
 		enemy = enemy,
 		samples = {},
 		casts = {},
+		live = { n = 0, totals = {}, spells = {} },
 	}
 	if lastCast and now - lastCast.at < 2.5 then fight.casts[1] = { t = 0, id = lastCast.id } end
 	lastCast = nil
@@ -157,13 +223,17 @@ local function finish()
 	f.spells = spells("damage")
 	f.healSpells = spells("healing")
 	for _, c in ipairs(f.casts) do c.channel = nil end
-	f.timeline, f.stack = H.Timeline(f)
-	f.t0 = nil
+	-- measured when the client showed your numbers, else estimated from your casts
+	if not f.live.secret and f.live.n >= 3 then
+		f.timeline, f.stack = fromLive(f.live)
+		f.measured = true
+	else
+		f.timeline, f.stack = H.Timeline(f)
+	end
+	f.live, f.t0 = nil, nil
 	for _, r in ipairs(f.damage) do if r.me then f.myDamage = r.total end end
 	for _, r in ipairs(f.healing) do if r.me then f.myHealing = r.total end end
 	if not (f.myDamage or f.myHealing) then return end
-	-- the curve: drop it when the numbers were hidden all fight
-	local any = false
 	-- a curve needs most of the fight; this client usually hides it in combat
 	local readable = 0
 	for _, v in ipairs(f.samples) do if v then readable = readable + 1 end end

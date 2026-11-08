@@ -342,7 +342,21 @@ function M:DrawGraph(height)
 	if DoA.Stats.DrawCombo then DoA.Stats.DrawCombo(g, {}, 0, 0, 0, 0, 0, 0) end -- clears the lines
 	if DoA.Stats.DrawStack then DoA.Stats.DrawStack(g, {}, 0, 0, 0, 0, 0, 0) end -- and the bars
 
-	-- in combat: your total so far, one column per second (the scale is that total)
+	-- in combat, when the client shows your numbers: the same chart, live
+	local lf = InCombatLockdown() and not healing and DoA.History.LiveFight()
+	if lf then
+		for _, col in ipairs(g.cols) do col:Hide() end
+		g.dps:SetText(Short(lf.dps))
+		g.value:SetText(Short(lf.total))
+		g.note:SetText("")
+		DoA.Stats.DrawCombo(g, lf, 0, chartY, w, chartH, 2, TOP_LINE + 1)
+		g.yTop:SetText("")
+		g.axL:SetText("0:00")
+		g.axR:SetText(DoA.Clock(lf.duration))
+		return 1
+	end
+
+	-- in combat, hidden numbers: your total so far, one column per second (the scale is that total)
 	local src = InCombatLockdown() and mySource()
 	if src then pcall(g.dps.SetText, g.dps, Short(src.amountPerSecond)) elseif n == 0 then g.dps:SetText("") end
 	if n > 0 then
