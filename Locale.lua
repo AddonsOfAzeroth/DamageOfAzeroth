@@ -78,6 +78,7 @@ for k, v in pairs({
 	["Last fight, per spell"] = "Laatste gevecht, per spell",
 	["now"] = "nu",
 	["Total so far, one column per second"] = "Totaal tot nu, één staafje per seconde",
+	["Total so far (numbers hidden in combat: the line after the fight)"] = "Totaal tot nu (cijfers verborgen in gevecht: de lijn na het gevecht)",
 	["Your healing, live"] = "Jouw healing, live",
 	["The graph fills during your next fight."] = "De grafiek vult zich tijdens je volgende gevecht.",
 	["DPS over the fight (estimate from your casts)"] = "DPS tijdens het gevecht (schatting uit je casts)",

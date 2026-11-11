@@ -252,7 +252,10 @@ end
 -- Live graph: your total so far, one column per second (the last 60 s). In
 -- combat the amounts are hidden; a status bar takes them as they are, and the
 -- newest total is the top of the scale (it only grows), so no maths is needed.
--- The steeper the columns rise, the higher your DPS.
+-- The steeper the line rises, the higher your DPS. Each column is nearly clear
+-- with a gold cap glued to the top of its fill: together the caps draw the
+-- line (like the Total line after the fight), with a soft area under it.
+local TOTAL_COLOR = { 1, 0.82, 0.25 }
 ---------------------------------------------------------------------------
 local COLS = 60
 local series = {}
@@ -380,25 +383,31 @@ function M:DrawGraph(height)
 		g.value:SetText("")
 		g.yTop:SetText("")
 	end
-	g.note:SetText(L["Total so far, one column per second"])
+	g.note:SetText(L["Total so far (numbers hidden in combat: the line after the fight)"])
 	g.axL:SetText(n > 0 and ("-" .. n .. "s") or "")
 	g.axR:SetText(L["now"])
 	local cw = w / COLS
-	local c = S.colors.accent
+	local c = TOTAL_COLOR
 	for i = 1, COLS do
 		local col = g.cols[i]
 		if not col then
 			col = CreateFrame("StatusBar", nil, g)
 			col:SetStatusBarTexture(S.flat)
 			col:SetOrientation("VERTICAL")
+			-- the line: a 2 px cap on the top of the fill (it follows the hidden value)
+			col.cap = col:CreateTexture(nil, "OVERLAY")
+			col.cap:SetColorTexture(c[1], c[2], c[3], 1)
+			col.cap:SetHeight(2)
+			col.cap:SetPoint("TOPLEFT", col:GetStatusBarTexture(), "TOPLEFT")
+			col.cap:SetPoint("TOPRIGHT", col:GetStatusBarTexture(), "TOPRIGHT")
 			g.cols[i] = col
 		end
 		col:ClearAllPoints()
 		col:SetPoint("BOTTOMLEFT", g, "BOTTOMLEFT", (i - 1) * cw, chartY)
-		col:SetSize(math.max(1, cw - 1), chartH)
+		col:SetSize(math.max(1, cw), chartH) -- no gap: the caps join into a line
 		local idx = n - COLS + i
 		if idx >= 1 then
-			col:SetStatusBarColor(c[1], c[2], c[3], 0.35 + 0.65 * i / COLS)
+			col:SetStatusBarColor(c[1], c[2], c[3], 0.10 + 0.10 * i / COLS)
 			local ok = pcall(col.SetMinMaxValues, col, 0, top) and pcall(col.SetValue, col, series[idx])
 			col:SetShown(ok and true or false)
 		else
