@@ -10,6 +10,7 @@
 ## SavedVariablesPerCharacter: DamageOfAzerothCharDB
 ## OptionalDeps: CastersOfAzeroth
 
+Hub.lua
 Core.lua
 Locale.lua
 Style.lua
@@ -17,3 +18,4 @@ History.lua
 Meter.lua
 Stats.lua
 Config.lua
+HubEntry.lua
