@@ -106,6 +106,7 @@ local function clearGraph(g)
 	for _, b in ipairs(g.icons) do b:Hide() end
 	for _, t in ipairs(g.segs or {}) do t:Hide() end
 	for _, e in ipairs(g.legend or {}) do e:Hide() end
+	if g.legendMore then g.legendMore:Hide() end
 	for _, l in ipairs(g.dl or {}) do l:Hide() end
 	for _, t in ipairs(g.cl or {}) do t:Hide() end
 	for _, t in ipairs(g.gl or {}) do t:Hide() end
@@ -322,8 +323,10 @@ function ST.DrawStack(g, f, x0, y0, w, h, lx, ly)
 			end
 		end
 	end
-	-- legend: which colour is which spell
+	-- legend: which colour is which spell; what does not fit goes into "+N"
+	-- (hover it for the rest, with their colours)
 	local x = lx
+	local hidden = {}
 	for si, e in ipairs(stack) do
 		local item = g.legend[si]
 		if not item then
@@ -337,12 +340,45 @@ function ST.DrawStack(g, f, x0, y0, w, h, lx, ly)
 		end
 		local c = PALETTE[si] or PALETTE[#PALETTE]
 		item.box:SetColorTexture(c[1], c[2], c[3], 1)
-		item.text:SetText(e.other and L["Other"] or spellName(e.id))
+		local label = e.other and L["Other"] or spellName(e.id)
+		item.text:SetText(label)
 		item:ClearAllPoints()
 		item:SetPoint("TOPLEFT", g, "TOPLEFT", x, -ly)
 		local wide = 14 + item.text:GetStringWidth() + 10
-		item:SetShown(x + wide - lx <= w)
-		x = x + wide
+		-- keep room for the "+N" when more spells follow
+		local room = (si < #stack) and 26 or 0
+		if #hidden == 0 and x + wide - lx <= w - room then
+			item:Show()
+			x = x + wide
+		else
+			item:Hide()
+			hidden[#hidden + 1] = { label = label, c = c }
+		end
+	end
+	local more = g.legendMore
+	if not more then
+		more = CreateFrame("Frame", nil, g)
+		more:SetSize(24, 12)
+		more.text = S:Font(more, 10)
+		more.text:SetPoint("LEFT")
+		more.text:SetTextColor(unpack(S.colors.accent))
+		more:EnableMouse(true)
+		more:SetScript("OnEnter", function(self)
+			GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
+			for _, h in ipairs(self.list or {}) do GameTooltip:AddLine(h.label, h.c[1], h.c[2], h.c[3]) end
+			GameTooltip:Show()
+		end)
+		more:SetScript("OnLeave", function() GameTooltip:Hide() end)
+		g.legendMore = more
+	end
+	more.list = hidden
+	if #hidden > 0 then
+		more.text:SetText("+" .. #hidden)
+		more:ClearAllPoints()
+		more:SetPoint("TOPLEFT", g, "TOPLEFT", x, -ly + 1)
+		more:Show()
+	else
+		more:Hide()
 	end
 	return top
 end
