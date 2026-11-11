@@ -1,4 +1,5 @@
 ## Interface: 16001
+## Category: Addons of Azeroth
 ## Title: Damage of Azeroth
 ## Notes: Damage meter, fight history and statistics with graphs. Solo, party and raid.
 ## Notes-nlNL: Damage meter, gevechtsgeschiedenis en statistieken met grafieken. Solo, groep en raid.
