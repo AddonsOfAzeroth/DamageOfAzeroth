@@ -931,6 +931,8 @@ function ST:Refresh()
 		if d > best then best = d end
 	end
 	self.tiles.count.value:SetText(#fights)
+	self.tiles.avg.label:SetText(L["Average"] .. " " .. psName())
+	self.tiles.best.label:SetText(L["Best"] .. " " .. psName())
 	self.tiles.avg.value:SetText(#fights > 0 and Short(sum / #fights) or "-")
 	self.tiles.best.value:SetText(#fights > 0 and Short(best) or "-")
 
