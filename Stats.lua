@@ -28,6 +28,11 @@ local FILTER_LABEL = { all = "All", solo = "Solo", party = "Party", raid = "Raid
 
 local function cfg() return DoA.char.stats end
 
+-- the Damage / Healing switch: DPS or HPS everywhere in this window
+local function healing() return cfg().kind == "healing" end
+local function PS(f) return healing() and H.HPS(f) or H.DPS(f) end
+local function psName() return healing() and "HPS" or "DPS" end
+
 ---------------------------------------------------------------------------
 -- Small widgets
 ---------------------------------------------------------------------------
@@ -175,13 +180,13 @@ local function drawCompare(g, f, fights)
 	local function avg(test)
 		local sum, n = 0, 0
 		for _, o in ipairs(fights) do
-			if test(o) then sum, n = sum + H.DPS(o), n + 1 end
+			if test(o) then sum, n = sum + PS(o), n + 1 end
 		end
 		return n > 0 and sum / n or nil, n
 	end
 	local best = 0
-	for _, o in ipairs(fights) do best = math.max(best, H.DPS(o)) end
-	local bars = { { L["This fight"], H.DPS(f), S.colors.accent } }
+	for _, o in ipairs(fights) do best = math.max(best, PS(o)) end
+	local bars = { { L["This fight"], PS(f), S.colors.accent } }
 	local enemyAvg, en = avg(function(o) return f.enemy and o.enemy == f.enemy end)
 	if enemyAvg and en > 1 then bars[#bars + 1] = { L["Usual vs %s"]:format(f.enemy), enemyAvg, { 0.6, 0.65, 0.71 } } end
 	local groupAvg = avg(function(o) return o.group == f.group end)
@@ -622,7 +627,7 @@ end
 -- bars: DPS of the last fights, coloured by solo / party / raid
 local function drawTrend(g, fights, selected)
 	clearGraph(g)
-	g.title:SetText(L["DPS of the last fights"])
+	g.title:SetText(healing() and L["HPS of the last fights"] or L["DPS of the last fights"])
 	local last = {}
 	for i = math.max(1, #fights - 29), #fights do last[#last + 1] = fights[i] end
 	if #last == 0 then
@@ -630,7 +635,7 @@ local function drawTrend(g, fights, selected)
 		return g.msg:Show()
 	end
 	local max = 1
-	for _, f in ipairs(last) do max = math.max(max, H.DPS(f)) end
+	for _, f in ipairs(last) do max = math.max(max, PS(f)) end
 	max = max * 1.1
 	grid(g, max)
 	local w, h = area(g)
@@ -649,13 +654,13 @@ local function drawTrend(g, fights, selected)
 			local fi = self.fight
 			GameTooltip:SetOwner(self, "ANCHOR_TOP")
 			GameTooltip:AddLine(fi.enemy or fi.zone or L["unknown"], 1, 1, 1)
-			GameTooltip:AddLine(("%s DPS  ·  %s"):format(Short(H.DPS(fi)), Clock(fi.duration)), 0.8, 0.8, 0.8)
+			GameTooltip:AddLine(("%s %s  ·  %s"):format(Short(PS(fi)), psName(), Clock(fi.duration)), 0.8, 0.8, 0.8)
 			GameTooltip:AddLine(date("%d/%m %H:%M", fi.started), 0.6, 0.6, 0.6)
 			GameTooltip:Show()
 		end)
 		b:SetScript("OnLeave", function() GameTooltip:Hide() end)
 		b:SetScript("OnClick", function(self) ST.selected = self.fight ST:Refresh() end)
-		local dps = H.DPS(f)
+		local dps = PS(f)
 		sum = sum + dps
 		b.fight = f
 		b:ClearAllPoints()
@@ -805,8 +810,8 @@ function ST:Build()
 	self.detailTabs.group:SetPoint("LEFT", self.detailTabs.spells, "RIGHT", 0, 0)
 	-- damage or healing: the graph and the list below follow it
 	self.kindTabs = {
-		damage = tab(f, L["Damage"], function() cfg().kind = "damage" ST:Refresh() end),
-		healing = tab(f, L["Healing"], function() cfg().kind = "healing" ST:Refresh() end),
+		damage = tab(f, L["Damage"], function() DoA:SetKind("damage") end),
+		healing = tab(f, L["Healing"], function() DoA:SetKind("healing") end),
 	}
 	self.kindTabs.healing:SetPoint("TOPRIGHT", self.graph, "BOTTOMRIGHT", 4, -6)
 	self.kindTabs.damage:SetPoint("RIGHT", self.kindTabs.healing, "LEFT", 0, 0)
@@ -921,7 +926,7 @@ function ST:Refresh()
 	-- tiles
 	local sum, best = 0, 0
 	for _, fi in ipairs(fights) do
-		local d = H.DPS(fi)
+		local d = PS(fi)
 		sum = sum + d
 		if d > best then best = d end
 	end
@@ -936,8 +941,10 @@ function ST:Refresh()
 		if fi then
 			r.fight = fi
 			r.name:SetText(fightName(fi))
-			local dps = H.DPS(fi)
-			r.value:SetText(dps > 0 and (Short(dps) .. " DPS") or (Short(H.HPS(fi)) .. " HPS"))
+			-- the chosen kind; a fight without it shows the other one
+			local v, unit = PS(fi), psName()
+			if v <= 0 then v, unit = healing() and H.DPS(fi) or H.HPS(fi), healing() and "DPS" or "HPS" end
+			r.value:SetText(Short(v) .. " " .. unit)
 			local gc = GROUP_COLORS[fi.group] or S.colors.accent
 			r.stripe:SetColorTexture(gc[1], gc[2], gc[3], 1)
 			r.hl:SetShown(fi == self.selected)
@@ -952,10 +959,17 @@ function ST:Refresh()
 	-- summary of the selected fight
 	local sel = self.selected
 	if sel then
-		local rank, of = nil, #(sel.damage or {})
-		for i, r in ipairs(sel.damage or {}) do if r.me then rank = i end end
-		local parts = { fightName(sel), Clock(sel.duration), Short(H.DPS(sel)) .. " DPS", Short(sel.myDamage or 0) }
-		if (sel.myHealing or 0) > 0 then parts[#parts + 1] = Short(sel.myHealing) .. " " .. L["Healing"] end
+		local group = (healing() and sel.healing or sel.damage) or {}
+		local rank, of = nil, #group
+		for i, r in ipairs(group) do if r.me then rank = i end end
+		local parts = { fightName(sel), Clock(sel.duration), Short(PS(sel)) .. " " .. psName() }
+		if healing() then
+			parts[#parts + 1] = Short(sel.myHealing or 0) .. " " .. L["Healing"]
+			if (sel.myDamage or 0) > 0 then parts[#parts + 1] = Short(sel.myDamage) .. " " .. L["Damage"] end
+		else
+			parts[#parts + 1] = Short(sel.myDamage or 0)
+			if (sel.myHealing or 0) > 0 then parts[#parts + 1] = Short(sel.myHealing) .. " " .. L["Healing"] end
+		end
 		if rank and of > 1 then parts[#parts + 1] = L["Rank"] .. " " .. L["%d of %d"]:format(rank, of) end
 		self.summary:SetText(table.concat(parts, "  ·  "))
 	else

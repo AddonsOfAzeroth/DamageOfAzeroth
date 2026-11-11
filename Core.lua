@@ -16,7 +16,8 @@ DoA.modules = {}
 local charDefaults = {
 	meter = {
 		enabled = true,
-		mode = "damage",     -- damage, dps, healing, hps
+		mode = "damage",     -- damage, dps, healing, hps, absorbs, dispels
+		last = {},           -- the view last used per kind: { damage = "dps", healing = "hps" }
 		session = "current", -- current, overall
 		rows = 8,            -- rows that fit (taller meter = more)
 		width = 220,
@@ -235,13 +236,15 @@ SlashCmdList.DAMAGEOFAZEROTH = function(msg)
 	elseif msg == "unlock" or msg == "lock" then
 		DoA:SetFramesLocked(msg == "lock")
 		DoA:Print(msg == "lock" and L["Frames locked."] or L["Frames unlocked: drag them where you like, drag a corner to make them bigger, type /doa lock when done."])
+	elseif msg == "switch" or msg == "heal" or msg == "healing" or msg == "damage" then
+		if msg == "switch" then DoA:ToggleKind() else DoA:SetKind(msg == "damage" and "damage" or "healing") end
 	elseif msg == "check" then
 		DoA.History:Probe()
 	elseif msg == "debug" then
 		DoA.debug = not DoA.debug
 		DoA:Print("debug " .. (DoA.debug and "on" or "off"))
 	else
-		DoA:Print(L["/doa: statistics. /doa config: settings. /doa meter: meter on/off. /doa unlock: move the frames. /doa check: what this client allows."])
+		DoA:Print(L["/doa: statistics. /doa config: settings. /doa meter: meter on/off. /doa switch: damage or healing. /doa unlock: move the frames. /doa check: what this client allows."])
 	end
 end
 

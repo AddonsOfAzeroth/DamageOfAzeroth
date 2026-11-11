@@ -12,11 +12,14 @@ local M = DoA:NewModule("Meter")
 
 local WIDTH, ROW_H, HEADER, PAD = 220, 16, 20, 2
 
+-- kind: the Damage / Healing switch; views the client doesn't have are skipped
 local MODES = {
-	{ key = "damage", label = "Damage", enum = "DamageDone", perSecond = false },
-	{ key = "dps", label = "DPS", enum = "DamageDone", perSecond = true },
-	{ key = "healing", label = "Healing", enum = "HealingDone", perSecond = false },
-	{ key = "hps", label = "HPS", enum = "HealingDone", perSecond = true },
+	{ key = "damage", kind = "damage", label = "Damage", enum = "DamageDone", perSecond = false },
+	{ key = "dps", kind = "damage", label = "DPS", enum = "DamageDone", perSecond = true },
+	{ key = "healing", kind = "healing", label = "Healing", enum = "HealingDone", perSecond = false },
+	{ key = "hps", kind = "healing", label = "HPS", enum = "HealingDone", perSecond = true },
+	{ key = "absorbs", kind = "healing", label = "Absorbs", enum = "Absorbs", perSecond = false, graph = "HealingDone" },
+	{ key = "dispels", kind = "healing", label = "Dispels", enum = "Dispels", perSecond = false, graph = "HealingDone" },
 }
 local SESSIONS = { current = "Current", overall = "Overall" }
 
@@ -34,6 +37,36 @@ local function cfg() return DoA.char.meter end
 local function modeOf(key)
 	for i, m in ipairs(MODES) do if m.key == key then return m, i end end
 	return MODES[1], 1
+end
+
+local function has(m)
+	return m.enum == "DamageDone" or m.enum == "HealingDone"
+		or (Enum and Enum.DamageMeterType and Enum.DamageMeterType[m.enum] ~= nil)
+end
+
+-- the views of one kind, in order
+local function viewsOf(kind)
+	local out = {}
+	for _, m in ipairs(MODES) do if m.kind == kind and has(m) then out[#out + 1] = m end end
+	return out
+end
+
+-- Damage <-> Healing: the meter goes to the view you last used for that kind
+-- (or the same total / per second), the statistics window follows
+function DoA:SetKind(kind)
+	local c = cfg()
+	c.last = type(c.last) == "table" and c.last or {}
+	local now = modeOf(c.mode)
+	c.last[now.kind] = now.key
+	local want = c.last[kind]
+	if not (want and modeOf(want).kind == kind) then want = now.perSecond and (kind == "healing" and "hps" or "dps") or kind end
+	c.mode = want
+	DoA.char.stats.kind = kind
+	DoA:Fire("SETTINGS", "kind")
+end
+
+function DoA:ToggleKind()
+	self:SetKind(modeOf(cfg().mode).kind == "healing" and "damage" or "healing")
 end
 
 -- v as it is when hidden (for widgets), else v or default (no test on hidden values)
@@ -93,10 +126,12 @@ function M:Build()
 	f:SetScript("OnLeave", function() if not f:IsMouseOver() then M:ShowTools(false) end end)
 	self.frame = f
 
-	self.title = headerButton(f, "Click: next view (damage, DPS, healing, HPS). Right-click: previous.", function(_, btn)
-		local _, i = modeOf(cfg().mode)
-		i = btn == "RightButton" and (i - 2) % #MODES + 1 or i % #MODES + 1
-		cfg().mode = MODES[i].key
+	self.title = headerButton(f, "Click: damage or healing. Right-click: next view (total, per second, absorbs, dispels).", function(_, btn)
+		if btn ~= "RightButton" then return DoA:ToggleKind() end
+		local m = modeOf(cfg().mode)
+		local list, i = viewsOf(m.kind), 1
+		for j, v in ipairs(list) do if v == m then i = j end end
+		cfg().mode = list[i % #list + 1].key
 		M:Refresh()
 	end)
 	self.title:SetPoint("TOPLEFT", 2, 0)
@@ -264,7 +299,7 @@ local function mySource()
 	if not (C_DamageMeter and C_DamageMeter.GetCombatSessionSourceFromType and Enum and Enum.DamageMeterType) then return end
 	local m = modeOf(cfg().mode)
 	local ok, s = pcall(C_DamageMeter.GetCombatSessionSourceFromType, Enum.DamageMeterSessionType.Current,
-		Enum.DamageMeterType[m.enum], UnitGUID("player"))
+		Enum.DamageMeterType[m.graph or m.enum], UnitGUID("player"))
 	if ok and Open(s) then return s end
 end
 
@@ -324,7 +359,7 @@ function M:DrawGraph(height)
 	g:SetHeight(height)
 	g:Show()
 
-	local healing = modeOf(cfg().mode).enum == "HealingDone"
+	local healing = modeOf(cfg().mode).kind == "healing"
 	g.dpsLabel:SetText(healing and L["HPS"] or L["DPS"])
 	g.label:SetText(L["Total"])
 	local w = self.frame:GetWidth() - PAD * 2
@@ -442,6 +477,6 @@ function M:OnEnable()
 		if M.frame:IsShown() then pcall(M.Refresh, M) end
 	end)
 	DoA:On("PLAYER_REGEN_DISABLED", function() wipe(series) end)
-	DoA:Listen("SETTINGS", function(group) if group == "meter" or group == "bars" then pcall(M.Refresh, M) end end)
+	DoA:Listen("SETTINGS", function(group) if group == "meter" or group == "bars" or group == "kind" then pcall(M.Refresh, M) end end)
 	pcall(M.Refresh, M)
 end
