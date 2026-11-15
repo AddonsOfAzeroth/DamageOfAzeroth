@@ -78,9 +78,75 @@ local function readInto(live, src)
 	return v
 end
 
+---------------------------------------------------------------------------
+-- What you fought (for the bestiary outside the game): every NPC you
+-- target in the fight, its level and type, and whether it died; your own
+-- lowest health; the XP the fight gave. Plain unit functions only, no
+-- combat log; a value the client hides is simply not kept.
+---------------------------------------------------------------------------
+local MAX_TARGETS = 20
+
+local function healthPct()
+	if not (UnitHealth and UnitHealthMax) then return end
+	local hp, max = Safe(UnitHealth("player"), nil), Safe(UnitHealthMax("player"), nil)
+	if type(hp) == "number" and type(max) == "number" and max > 0 then
+		return math.floor(hp / max * 1000 + 0.5) / 10
+	end
+end
+
+-- the target, when it is an NPC you can attack (players are never kept)
+local function npcTarget()
+	if not (UnitExists and UnitIsPlayer and UnitLevel) then return end
+	if not Safe(UnitExists("target"), false) then return end
+	if Safe(UnitIsPlayer("target"), true) ~= false then return end
+	if Safe(UnitCanAttack("player", "target"), false) ~= true then return end
+	local name = Safe(UnitName("target"), nil)
+	if type(name) ~= "string" then return end
+	local level = Safe(UnitLevel("target"), nil)
+	local class = UnitClassification and Safe(UnitClassification("target"), nil)
+	return name, type(level) == "number" and level or nil, type(class) == "string" and class or nil
+end
+
+local function noteTarget()
+	if not fight then return end
+	local name, level, class = npcTarget()
+	if not name then return end
+	local e = fight.seen[name]
+	if not e then
+		if #fight.targets >= MAX_TARGETS then return end
+		e = { n = name }
+		fight.seen[name] = e
+		fight.targets[#fight.targets + 1] = e
+	end
+	e.l, e.c = level or e.l, class or e.c
+	if UnitIsDead and Safe(UnitIsDead("target"), false) == true then e.d = 1 end
+end
+H.NoteTarget = noteTarget
+
+local function noteHealth()
+	local hp = fight and healthPct()
+	if hp and (not fight.hpMin or hp < fight.hpMin) then fight.hpMin = hp end
+end
+
+local function xpNow()
+	local xp, max = Safe(UnitXP and UnitXP("player"), nil), Safe(UnitXPMax and UnitXPMax("player"), nil)
+	if type(xp) == "number" and type(max) == "number" and max > 0 then return xp, max end
+end
+
+-- XP since the start of the fight (a level-up in between counts too)
+local function xpGained(f)
+	local xp = xpNow()
+	if not (xp and f.xp0) then return end
+	local lvl = Safe(UnitLevel("player"), nil)
+	if type(lvl) ~= "number" or lvl == f.level then return math.max(0, xp - f.xp0) end
+	if lvl == (f.level or 0) + 1 then return math.max(0, f.xpMax0 - f.xp0) + xp end
+end
+
 -- every second: damage and healing so far (when readable)
 local function sample()
 	if not fight then return end
+	pcall(noteHealth)
+	pcall(noteTarget)
 	local v = readInto(fight.live, mySource("damage") or mine(current("damage")))
 	readInto(fight.liveHeal, mySource("healing"))
 	if v then
@@ -186,6 +252,9 @@ end
 local function start()
 	local enemy = Safe(UnitName("target"), nil)
 	if not (type(enemy) == "string" and Safe(UnitCanAttack("player", "target"), false)) then enemy = nil end
+	if UnitIsPlayer and Safe(UnitIsPlayer("target"), false) == true then enemy = nil end -- other players' names are not kept
+	local _, _, enemyLevel, enemyClass = pcall(npcTarget)
+	local xp0, xpMax0 = xpNow()
 	local now = GetTime()
 	fight = {
 		started = time(),
@@ -193,6 +262,11 @@ local function start()
 		group = groupType(),
 		zone = Safe(GetRealZoneText and GetRealZoneText(), nil),
 		enemy = enemy,
+		enemyLevel = enemy and enemyLevel or nil, -- -1 = skull
+		enemyClass = enemy and enemyClass or nil, -- normal, elite, rare, rareelite, worldboss, ...
+		targets = {}, seen = {}, -- every NPC you targeted: { n = name, l = level, c = type, d = 1 died }
+		hpMin = healthPct(),
+		xp0 = xp0, xpMax0 = xpMax0,
 		-- who fought: for a look at the saved fights outside the game
 		class = UnitClass and select(2, UnitClass("player")) or nil,
 		level = UnitLevel and Safe(UnitLevel("player"), nil) or nil,
@@ -202,6 +276,7 @@ local function start()
 		live = { n = 0, totals = {}, spells = {} },
 		liveHeal = { n = 0, totals = {}, spells = {} },
 	}
+	pcall(noteTarget)
 	if lastCast and now - lastCast.at < 2.5 then fight.casts[1] = { t = 0, id = lastCast.id } end
 	lastCast = nil
 	H.ticker = H.ticker or C_Timer.NewTicker(1, function() pcall(sample) end)
@@ -245,6 +320,25 @@ local function spells(kind)
 	return out
 end
 
+-- after the fight: did the target die, your last health, did you die, the XP
+function H.FinishMobData(f)
+	local name = npcTarget()
+	local e = name and f.seen and f.seen[name]
+	if e and UnitIsDead and Safe(UnitIsDead("target"), false) == true then e.d = 1 end
+	local first = f.enemy and f.seen and f.seen[f.enemy]
+	if first and first.d then
+		f.killed = 1
+	elseif first and name == f.enemy then
+		f.killed = 0 -- still targeted and alive
+	end
+	f.hpEnd = healthPct()
+	if f.hpEnd and (not f.hpMin or f.hpEnd < f.hpMin) then f.hpMin = f.hpEnd end
+	if UnitIsDeadOrGhost then f.died = Safe(UnitIsDeadOrGhost("player"), false) == true and 1 or 0 end
+	f.xp = xpGained(f)
+	f.xp0, f.xpMax0, f.seen = nil, nil, nil
+	if f.targets and #f.targets == 0 then f.targets = nil end
+end
+
 local function finish()
 	local f = fight
 	fight = nil
@@ -272,6 +366,7 @@ local function finish()
 		f.healTimeline, f.healStack = H.Timeline({ duration = f.duration, spells = f.healSpells, casts = f.casts })
 	end
 	f.live, f.liveHeal, f.t0 = nil, nil, nil
+	pcall(H.FinishMobData, f)
 	for _, r in ipairs(f.damage) do if r.me then f.myDamage = r.total end end
 	for _, r in ipairs(f.healing) do if r.me then f.myHealing = r.total end end
 	if not (f.myDamage or f.myHealing) then return end

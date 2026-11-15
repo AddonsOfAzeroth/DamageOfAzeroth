@@ -4,7 +4,7 @@
 ## Notes: Damage meter, fight history and statistics with graphs. Solo, party and raid.
 ## Notes-nlNL: Damage meter, gevechtsgeschiedenis en statistieken met grafieken. Solo, groep en raid.
 ## Author: DinX
-## Version: 0.1.0
+## Version: 0.2.0
 ## IconTexture: Interface\Icons\Ability_DualWield
 ## SavedVariables: DamageOfAzerothDB
 ## SavedVariablesPerCharacter: DamageOfAzerothCharDB
