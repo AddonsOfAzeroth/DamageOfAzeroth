@@ -171,6 +171,15 @@ local function channelStop()
 	end
 end
 
+-- the spec Casters of Azeroth uses (when it is loaded)
+local function mySpec()
+	local ck = _G.CastersOfAzeroth
+	if type(ck) == "table" and ck.GetSpec then
+		local ok, _, key = pcall(ck.GetSpec, ck)
+		if ok and type(key) == "string" then return key end
+	end
+end
+
 local function start()
 	local enemy = Safe(UnitName("target"), nil)
 	if not (type(enemy) == "string" and Safe(UnitCanAttack("player", "target"), false)) then enemy = nil end
@@ -181,6 +190,10 @@ local function start()
 		group = groupType(),
 		zone = Safe(GetRealZoneText and GetRealZoneText(), nil),
 		enemy = enemy,
+		-- who fought: for a look at the saved fights outside the game
+		class = UnitClass and select(2, UnitClass("player")) or nil,
+		level = UnitLevel and Safe(UnitLevel("player"), nil) or nil,
+		spec = mySpec(),
 		samples = {},
 		casts = {},
 		live = { n = 0, totals = {}, spells = {} },
