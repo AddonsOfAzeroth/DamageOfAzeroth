@@ -155,10 +155,13 @@ local function onCast(id, channel)
 	if #casts >= 400 then return end
 	local t = now - fight.t0
 	local prev = casts[#casts]
-	-- a channel also reports a normal cast: keep one entry
-	if channel and prev and prev.id == id and t - prev.t < 0.3 then
-		prev.channel = now
-		return
+	-- a channel also reports a normal cast, before or after its start: keep one entry
+	if prev and prev.id == id and t - prev.t < 0.3 then
+		if channel then
+			prev.channel = now
+			return
+		end
+		if prev.channel then return end
 	end
 	casts[#casts + 1] = { t = math.floor(t * 10 + 0.5) / 10, id = id, channel = channel and now or nil }
 end
